@@ -39,11 +39,16 @@
     const btn = $('themeToggle');
     if (btn) {
       const theme = document.body.getAttribute('data-theme');
-      const icon = btn.querySelector('.theme-icon');
-      if (icon) {
-        icon.textContent = theme === 'dark' ? 'Light' : 'Dark';
+      const textEl = btn.querySelector('.theme-text');
+      const iconEl = btn.querySelector('.theme-icon-circle');
+      
+      if (textEl) {
+        textEl.textContent = theme === 'dark' ? 'Light' : 'Dark';
       }
-      btn.className = theme === 'dark' ? 'btn btn-dark btn-sm theme-btn' : 'btn btn-light btn-sm theme-btn';
+      
+      if (iconEl) {
+        iconEl.textContent = '';
+      }
     }
   }
 
@@ -183,7 +188,7 @@
     $('questionText').value = q.question;
     $('questionCategory').value = q.category || '';
     $('questionHint').value = q.hint || '';
-    $('questionExplanation').value = q.explanation || '';
+    $('questionImage').value = q.image || '';
     if (q.type === 'tf') {
       document.querySelector(`input[name="tfCorrectOption"][value="${q.correctAnswer}"]`).checked = true;
     } else {
@@ -281,7 +286,6 @@
         const correct = parseInt(parts[5]) || 0;
         const cat = parts[6]?.trim() || '';
         const hint = parts[7]?.trim() || '';
-        const expl = parts[8]?.trim() || '';
         if (q && opts.every(o => o)) {
           questions.push({
             id: Date.now() + count++,
@@ -291,7 +295,7 @@
             correctAnswer: correct,
             category: cat,
             hint: hint,
-            explanation: expl,
+            image: '',
             optionImages: []
           });
         }
@@ -319,22 +323,83 @@
   
   function toggleQRCode() {
     const container = $('qrContainer');
-    if (!container) return;
+    console.log('toggleQRCode invoked');
+    if (!container) {
+      console.warn('toggleQRCode: #qrContainer not found');
+      return;
+    }
+    // If already generated, remove it
     if (qrGenerated) {
       container.innerHTML = '';
       qrGenerated = false;
-      $('qrToggleBtn').textContent = 'Show QR Code';
+      const btn = $('qrToggleBtn'); if (btn) btn.textContent = 'Show QR Code';
       return;
     }
-    const link = $('quizLink').textContent;
+
+    const linkEl = $('quizLink');
+    const link = linkEl ? linkEl.textContent : '';
     if (!link || link.includes('Generating')) {
       showAlert('Generate quiz link first!', 'warning');
       return;
     }
-    container.innerHTML = '';
-    new QRCode(container, { text: link, width: 250, height: 250 });
-    qrGenerated = true;
-    $('qrToggleBtn').textContent = 'Hide QR Code';
+
+    // Ensure container is visible and create a dedicated inner target for QR rendering
+    container.style.display = 'block';
+    container.innerHTML = '<div id="qrCanvasDiv" style="display:inline-block;"></div>';
+    if (typeof QRCode === 'undefined') {
+      console.error('QRCode library not loaded (QRCode is undefined)');
+      showAlert('QR generation library not loaded. Please refresh.', 'warning');
+      return;
+    }
+    try {
+      const target = document.getElementById('qrCanvasDiv');
+      if (!target) throw new Error('qrCanvasDiv target not found');
+      console.log('Generating QR for link length:', (link || '').length);
+
+      // Try a sequence of QR options to maximize capacity.
+      const tryOptions = [];
+      // first attempt: automatic version, medium-high correction
+      tryOptions.push({ text: link, width: 300, height: 300, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.M : undefined });
+      // next: lower error correction to increase capacity
+      tryOptions.push({ text: link, width: 300, height: 300, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.L : undefined });
+      // bigger typeNumbers to allow more data (10,20,30,40)
+      [10,20,30,40].forEach(tn => tryOptions.push({ text: link, width: 300, height: 300, typeNumber: tn, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.L : undefined }));
+
+      let created = false;
+      let lastError = null;
+      for (let opts of tryOptions) {
+        try {
+          // clean previous content then create
+          target.innerHTML = '';
+          if (typeof QRCode === 'undefined') throw new Error('QRCode lib missing');
+          // Some QR libs accept element or id; pass element for reliability
+          new QRCode(target, opts);
+          created = true;
+          break;
+        } catch (e) {
+          lastError = e;
+          console.warn('QRCode attempt failed with opts', opts.typeNumber || 'auto', opts.correctLevel, e && e.message);
+          continue;
+        }
+      }
+
+      if (!created) {
+        console.error('All QR generation attempts failed', lastError);
+        throw lastError || new Error('QR generation failed');
+      }
+
+      qrGenerated = true;
+      const btn = $('qrToggleBtn'); if (btn) btn.textContent = 'Hide QR Code';
+      console.log('QR code generated successfully');
+    } catch (err) {
+      console.error('Failed to generate QR code', err);
+      // If the payload is very long, provide a helpful hint
+      if (link && link.length > 1200) {
+        showAlert('Quiz link is too long for QR generation. Consider removing hints/images or use Copy Link.', 'warning');
+      } else {
+        showAlert('Failed to generate QR code. Check console for details.', 'warning');
+      }
+    }
   }
 
   // QR Scanner for students (uses ZXing or Html5Qrcode)
@@ -844,8 +909,34 @@ function flipCamera() {
       if (displayQuizIdElement) displayQuizIdElement.textContent = quizId;
       const quizData = { id: quizId, questions: questions, version: '8.0' };
       try {
-        const encoded = btoa(JSON.stringify(quizData));
-        const safe = encodeURIComponent(encoded);
+        // Build a compact representation to reduce payload size for QR codes
+        function buildCompact(qd) {
+          const out = { v: qd.version || '8.0', id: qd.id || quizId, qs: [] };
+          (qd.questions || []).forEach(q => {
+            // type: 'm' = mc, 't' = tf
+            const t = q.type === 'tf' ? 't' : 'm';
+            const opts = q.type === 'tf' ? ['True','False'] : (q.options || []);
+            const entry = [t, q.question || '', opts, q.correctAnswer || 0];
+            // include image only if present
+            if (q.image) entry.push(q.image);
+            out.qs.push(entry);
+          });
+          return out;
+        }
+
+        const compact = buildCompact(quizData);
+        let safe = null;
+        try {
+          if (typeof LZString !== 'undefined' && LZString.compressToEncodedURIComponent) {
+            safe = LZString.compressToEncodedURIComponent(JSON.stringify(compact));
+          }
+        } catch (e) { safe = null; }
+
+        if (!safe) {
+          const encoded = btoa(JSON.stringify(compact));
+          safe = encodeURIComponent(encoded);
+        }
+
         const currentUrl = window.location.href.split('#')[0];
         const quizLink = `${currentUrl}#quiz=${safe}`;
         quizLinkElement.textContent = quizLink;
@@ -1145,14 +1236,39 @@ function flipCamera() {
       if (joinInput.includes('#quiz=')) {
         const hashIndex = joinInput.indexOf('#quiz=');
         const encodedData = joinInput.substring(hashIndex + 6);
-        quizData = JSON.parse(atob(decodeURIComponent(encodedData)));
+        // Try LZString decompression first (newer compressed links)
+        try {
+          if (typeof LZString !== 'undefined' && LZString.decompressFromEncodedURIComponent) {
+            const dec = LZString.decompressFromEncodedURIComponent(encodedData);
+            if (dec) quizData = JSON.parse(dec);
+          }
+        } catch (e) { quizData = null; }
+
+        // Fallback to old base64 method
+        if (!quizData) {
+          try {
+            quizData = JSON.parse(atob(decodeURIComponent(encodedData)));
+          } catch (e) {
+            throw new Error('Invalid quiz format');
+          }
+        }
       }
-      // Method 2: Direct base64 encoded data
+      // Method 2: Direct compressed or base64 data
       else if (joinInput.length > 20) {
         try {
-          quizData = JSON.parse(atob(joinInput));
-        } catch (e) {
-          throw new Error('Invalid quiz format');
+          // Try compressed form
+          if (typeof LZString !== 'undefined' && LZString.decompressFromEncodedURIComponent) {
+            const dec = LZString.decompressFromEncodedURIComponent(joinInput);
+            if (dec) { quizData = JSON.parse(dec); }
+          }
+        } catch (e) { quizData = null; }
+
+        if (!quizData) {
+          try {
+            quizData = JSON.parse(atob(joinInput));
+          } catch (e) {
+            throw new Error('Invalid quiz format');
+          }
         }
       }
       
@@ -1351,10 +1467,12 @@ function flipCamera() {
           `).join('')}
         </div>`;
     const hintHtml = showHints && question.hint ? `<div class="hint-display"><strong>💡 Hint:</strong> ${escapeHtml(question.hint)}</div>` : '';
+    const imageHtml = question.image ? `<div style="margin: 15px 0; text-align: center;"><img src="${escapeHtml(question.image)}" style="max-width: 100%; max-height: 300px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);"></div>` : '';
     currentQuestionDiv.innerHTML = `
       <div class="timer-container">Time Left: <span id="questionTimer">60</span>s</div>
       <div class="question-number">Question ${currentQuestionIndex + 1} of ${questions.length}</div>
       <div class="question">${escapeHtml(question.question)}</div>
+      ${imageHtml}
       ${hintHtml}
       ${optionsHtml}
     `;
@@ -1519,8 +1637,7 @@ function flipCamera() {
       const bgColor = isCorrect ? '#d4edda' : '#f8d7da';
       const borderColor = isCorrect ? '#28a745' : '#dc3545';
       const textColor = isCorrect ? '#155724' : '#721c24';
-      const explanation = actualQ.explanation ? `<div class="explanation-display"><strong>Explanation:</strong> ${escapeHtml(actualQ.explanation)}</div>` : '';
-      return `<div style="margin-bottom: 20px; padding: 15px; background: ${bgColor}; border-radius: 5px; border-left: 4px solid ${borderColor};"><strong style="color: ${textColor};">Q${i + 1}: ${escapeHtml(actualQ.question)}</strong><div style="margin-top: 10px; font-size: 0.95rem;"><div><strong>Your answer:</strong> ${escapeHtml(userAnswerText)}</div><div><strong>Correct answer:</strong> ${escapeHtml(correctAnswerText)}</div>${explanation}</div></div>`;
+      return `<div style="margin-bottom: 20px; padding: 15px; background: ${bgColor}; border-radius: 5px; border-left: 4px solid ${borderColor};"><strong style="color: ${textColor};">Q${i + 1}: ${escapeHtml(actualQ.question)}</strong><div style="margin-top: 10px; font-size: 0.95rem;"><div><strong>Your answer:</strong> ${escapeHtml(userAnswerText)}</div><div><strong>Correct answer:</strong> ${escapeHtml(correctAnswerText)}</div></div></div>`;
     }).join('');
     content.innerHTML = reviewHTML;
   }
@@ -1682,7 +1799,7 @@ function flipCamera() {
           const questionText = $('questionText').value.trim();
           const category = $('questionCategory').value.trim();
           const hint = $('questionHint').value.trim();
-          const explanation = $('questionExplanation').value.trim();
+          const image = $('questionImage').value.trim();
           let correctOptionIndex, options;
           if (type === 'tf') {
             const chosen = document.querySelector('input[name="tfCorrectOption"]:checked');
@@ -1715,7 +1832,7 @@ function flipCamera() {
             correctAnswer: correctOptionIndex,
             category: category,
             hint: hint,
-            explanation: explanation,
+            image: image,
             optionImages: optImages
           };
           questions.push(newQuestion);
@@ -1772,6 +1889,8 @@ function flipCamera() {
     currentStudentName = null;
     quizId = null;
   };
+  // Expose clear function (was not exported earlier)
+  window.clearAllQuestions = clearAllQuestions;
   window.goBackToJoin = function() {
     if ($('studentPanel')) $('studentPanel').style.display = 'none';
     if ($('studentJoin')) $('studentJoin').style.display = 'block';
