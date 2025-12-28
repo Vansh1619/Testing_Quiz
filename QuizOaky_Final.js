@@ -694,37 +694,113 @@ function flipCamera() {
         return showAlert('Only one camera available', 'info');
     }
     
-    console.log('Flip camera: switching from index', currentVideoDeviceIndex);
+    console.log('=== FLIP CAMERA START ===');
+    console.log('Current index:', currentVideoDeviceIndex);
+    console.log('Available cameras:', videoInputDevices.length);
     
     try {
-        // Stop current scanner
-        stopQrScanner();
+        // Completely stop and clear the scanner
+        console.log('Stopping scanner...');
+        const reader = $('qrReader');
+        const statusBox = $('qrScannerStatus');
+        const resultBox = $('qrScanResult');
+        
+        // Force stop Html5Qrcode if running
+        if (html5QrScanner) {
+            try {
+                html5QrScanner.stop().then(() => {
+                    try { html5QrScanner.clear(); } catch(e) { console.warn('Clear failed:', e); }
+                    html5QrScanner = null;
+                    qrScannerActive = false;
+                }).catch(err => {
+                    console.warn('Stop failed:', err);
+                    html5QrScanner = null;
+                    qrScannerActive = false;
+                });
+            } catch(e) {
+                console.warn('Exception stopping scanner:', e);
+                html5QrScanner = null;
+                qrScannerActive = false;
+            }
+        }
+        
+        // Clear reader element
+        if (reader) {
+            reader.innerHTML = '';
+        }
         
         // Switch to next camera
         currentVideoDeviceIndex = (currentVideoDeviceIndex + 1) % videoInputDevices.length;
         const nextDevice = videoInputDevices[currentVideoDeviceIndex];
         
-        console.log('Flip camera: new index', currentVideoDeviceIndex, 'device:', nextDevice);
+        console.log('New index:', currentVideoDeviceIndex);
+        console.log('Next device:', nextDevice.label, 'ID:', nextDevice.id);
+        console.log('=== FLIP CAMERA: Starting new scanner ===');
         
-        // Restart with new camera after brief delay
+        // Delay to ensure scanner is fully stopped
         setTimeout(() => {
-            const reader = $('qrReader');
-            const statusBox = $('qrScannerStatus');
-            const resultBox = $('qrScanResult');
-            
-            // Use Html5Qrcode for flip (better mobile support)
             if (typeof Html5Qrcode !== 'undefined') {
-                console.log('Starting camera with device index:', currentVideoDeviceIndex);
-                tryHtml5QrcodeScan(reader, statusBox, resultBox);
-                showAlert('Camera switched to ' + (nextDevice.label || 'camera ' + (currentVideoDeviceIndex + 1)), 'success');
+                console.log('Creating new Html5Qrcode instance with camera:', currentVideoDeviceIndex);
+                
+                // Create fresh scanner with new device ID
+                html5QrScanner = new Html5Qrcode('qrReader');
+                
+                const config = {
+                    fps: 5,
+                    qrbox: { width: Math.min(250, Math.floor(window.innerWidth * 0.7)), height: Math.min(250, Math.floor(window.innerWidth * 0.7)) },
+                    aspectRatio: 1.0,
+                    disableFlip: false,
+                    rememberLastUsedCamera: false,
+                    showTorchButtonIfSupported: true
+                };
+                
+                console.log('Starting Html5Qrcode with device ID:', nextDevice.id);
+                
+                html5QrScanner.start(
+                    nextDevice.id,
+                    config,
+                    (decodedText) => {
+                        console.log('QR decoded:', decodedText);
+                        const text = decodedText.trim();
+                        if (resultBox) resultBox.value = text;
+                        const joinCodeEl = $('joinCode');
+                        if (joinCodeEl) joinCodeEl.value = text;
+                        if (statusBox) statusBox.innerText = 'QR code detected!';
+                        showAlert('QR code scanned!', 'success');
+                        stopQrScanner();
+                    },
+                    (error) => {
+                        console.debug('Scan attempt:', error);
+                    }
+                ).then(() => {
+                    console.log('Scanner started successfully');
+                    qrScannerActive = true;
+                    if (reader) reader.style.display = 'block';
+                    if (statusBox) {
+                        statusBox.style.display = 'block';
+                        statusBox.innerText = 'Camera active: ' + (nextDevice.label || 'Front/Back Camera');
+                    }
+                    if (videoInputDevices.length > 1) {
+                        const fbtn = $('flipCameraBtn');
+                        if (fbtn) fbtn.style.display = 'inline-block';
+                    }
+                    showAlert('Switched to ' + (nextDevice.label || 'camera'), 'success');
+                }).catch(err => {
+                    console.error('Failed to start Html5Qrcode:', err);
+                    html5QrScanner = null;
+                    qrScannerActive = false;
+                    if (reader) reader.style.display = 'none';
+                    if (statusBox) statusBox.style.display = 'none';
+                    showAlert('Camera switch failed: ' + (err.message || String(err)), 'warning');
+                });
             } else {
-                showAlert('Restart camera to switch', 'info');
-                startQrScanner();
+                showAlert('Camera library not available', 'warning');
             }
-        }, 400);
+        }, 600);
+        
     } catch(e) {
-        console.error('Flip camera error:', e);
-        showAlert('Camera switch failed. Try restarting.', 'warning');
+        console.error('Flip camera exception:', e);
+        showAlert('Camera switch failed. Try again.', 'warning');
     }
 }
 
