@@ -93,14 +93,12 @@
       updateShareLink();
       displayCollectedResults();
       updateCategoryFilter();
-      // reduce overly-sensitive scroll on long internal lists
       const slowScrollTargets = ['questionsList', 'collectedResultsList'];
       slowScrollTargets.forEach(id => {
         const el = $(id);
         if (!el) return;
         el.addEventListener('wheel', function(e) {
           e.preventDefault();
-          // apply gentler scroll multiplier
           const factor = 0.35;
           this.scrollBy({ top: e.deltaY * factor, behavior: 'auto' });
         }, { passive: false });
@@ -110,7 +108,6 @@
     }
   }
 
-  // Question Management
   function updateQuestionForm() {
     const type = $('questionType').value;
     const mcOpts = $('mcOptions');
@@ -118,10 +115,8 @@
     if (type === 'tf') {
       mcOpts.style.display = 'none';
       tfOpts.style.display = 'block';
-      // make TF radios required and remove required from MC radios (browser validation)
       document.querySelectorAll('input[name="correctOption"]').forEach(r => r.removeAttribute('required'));
       document.querySelectorAll('input[name="tfCorrectOption"]').forEach(r => r.setAttribute('required','required'));
-      // remove required from MC option text inputs as they are hidden
       ['optionText0','optionText1','optionText2','optionText3'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.removeAttribute('required');
@@ -129,10 +124,8 @@
     } else {
       mcOpts.style.display = 'block';
       tfOpts.style.display = 'none';
-      // ensure MC radios are required and TF radios are not
       document.querySelectorAll('input[name="correctOption"]').forEach(r => r.setAttribute('required','required'));
       document.querySelectorAll('input[name="tfCorrectOption"]').forEach(r => r.removeAttribute('required'));
-      // ensure MC option text inputs are required when MC selected
       ['optionText0','optionText1','optionText2','optionText3'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.setAttribute('required','required');
@@ -155,8 +148,10 @@
       questionDiv.className = 'question-item';
       const cat = q.category ? ` [${escapeHtml(q.category)}]` : '';
       const hint = q.hint ? ` - Hint: ${escapeHtml(q.hint)}` : '';
+      const imageHtml = q.image ? `<div style="margin: 10px 0; text-align: center;"><img src="${escapeHtml(q.image)}" style="max-width: 100%; max-height: 200px; border-radius: 5px;"></div>` : '';
       questionDiv.innerHTML = `
         <div class="question-text">${index + 1}. ${escapeHtml(q.question)}${cat}${hint}</div>
+        ${imageHtml}
         <div class="options-list">
           ${(q.type === 'tf' ? ['True', 'False'] : q.options).map((option, optIndex) =>
             `<div class="option-display ${optIndex === q.correctAnswer ? 'correct-option' : ''}">${q.type === 'tf' ? (optIndex === 0 ? 'True' : 'False') : String.fromCharCode(65 + optIndex)}. ${escapeHtml(option)}</div>`
@@ -256,6 +251,7 @@
     section.querySelector('#previewContent').innerHTML = preview.map((q, i) => `
       <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
         <strong>Q${i+1}: ${escapeHtml(q.question)}</strong>
+        ${q.image ? `<div style="margin: 10px 0; text-align: center;"><img src="${escapeHtml(q.image)}" style="max-width: 100%; max-height: 150px; border-radius: 4px;"></div>` : ''}
         <div style="margin-top: 10px; margin-left: 10px;">
           ${(q.type === 'tf' ? ['True', 'False'] : q.options).map((opt, j) => `
             <div>${q.type === 'tf' ? (j === 0 ? 'True' : 'False') : String.fromCharCode(65 + j)}. ${escapeHtml(opt)}</div>
@@ -274,32 +270,80 @@
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-      const csv = e.target.result;
-      const lines = csv.split('\n').slice(1);
+      const csv = e.target.result || '';
+      const rows = csv.split(/\r?\n/).filter(r => r.trim().length > 0);
+      if (rows.length === 0) return showAlert('CSV is empty', 'warning');
+
+      // Helper function to split CSV line supporting quoted fields
+      function splitCsvLine(line) {
+        const out = [];
+        let cur = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') {
+            if (inQuotes && line[i+1] === '"') { cur += '"'; i++; }
+            else inQuotes = !inQuotes;
+          } else if (ch === ',' && !inQuotes) {
+            out.push(cur);
+            cur = '';
+          } else {
+            cur += ch;
+          }
+        }
+        out.push(cur);
+        return out;
+      }
+
+      // Parse header to detect column positions
+      const headerParts = splitCsvLine(rows[0]).map(h => h.trim().toLowerCase());
+      const questionIdx = headerParts.findIndex(h => h.includes('question'));
+      const optionIndices = [];
+      headerParts.forEach((h, i) => { if (h.startsWith('option') && !h.includes('image')) optionIndices.push(i); });
+      if (optionIndices.length === 0) {
+        optionIndices.push(1,2,3,4);
+      }
+      const correctIdx = headerParts.findIndex(h => h.includes('correct'));
+      const categoryIdx = headerParts.findIndex(h => h.includes('category'));
+      const hintIdx = headerParts.findIndex(h => h.includes('hint'));
+      const imageIdx = headerParts.findIndex(h => h === 'image' || h.includes(' image') || h.includes('image'));
+      const optionImageIndices = [];
+      headerParts.forEach((h,i) => { if (h.includes('option image') || h.includes('optionimage') || h.includes('option_image')) optionImageIndices.push(i); });
+
       let count = 0;
-      lines.forEach(line => {
-        if (!line.trim()) return;
-        const parts = line.split(',');
-        if (parts.length < 6) return;
-        const q = parts[0].trim();
-        const opts = [parts[1].trim(), parts[2].trim(), parts[3].trim(), parts[4].trim()];
-        const correct = parseInt(parts[5]) || 0;
-        const cat = parts[6]?.trim() || '';
-        const hint = parts[7]?.trim() || '';
+      // Process data rows
+      for (let r = 1; r < rows.length; r++) {
+        const line = rows[r];
+        if (!line.trim()) continue;
+        const parts = splitCsvLine(line);
+        const q = (questionIdx >= 0 ? (parts[questionIdx] || '') : (parts[0] || '')).trim();
+        const opts = optionIndices.slice(0,4).map(i => (parts[i] || '').trim());
+        const correct = (correctIdx >= 0 ? parseInt((parts[correctIdx] || '').trim()) : (parseInt((parts[5]||'').trim()) || 0));
+        const cat = categoryIdx >= 0 ? (parts[categoryIdx] || '').trim() : '';
+        const hint = hintIdx >= 0 ? (parts[hintIdx] || '').trim() : '';
+        const image = imageIdx >= 0 ? (parts[imageIdx] || '').trim() : '';
+        const optImages = [];
+        if (optionImageIndices.length) {
+          for (let i = 0; i < optionImageIndices.length && i < 4; i++) {
+            optImages.push((parts[optionImageIndices[i]] || '').trim());
+          }
+        }
+
         if (q && opts.every(o => o)) {
           questions.push({
             id: Date.now() + count++,
             type: 'mc',
             question: q,
             options: opts,
-            correctAnswer: correct,
+            correctAnswer: isNaN(correct) ? 0 : correct,
             category: cat,
             hint: hint,
-            image: '',
-            optionImages: []
+            image: image || '',
+            optionImages: optImages
           });
         }
-      });
+      }
+
       saveQuizData();
       loadQuestions();
       updateShareLink();
@@ -344,8 +388,12 @@
     }
 
     // Ensure container is visible and create a dedicated inner target for QR rendering
-    container.style.display = 'block';
-    container.innerHTML = '<div id="qrCanvasDiv" style="display:inline-block;"></div>';
+    // Center the QR visually using flex so it appears in the middle of the container
+    container.style.display = 'flex';
+    container.style.justifyContent = 'center';
+    container.style.alignItems = 'center';
+    container.style.minHeight = '360px';
+    container.innerHTML = '<div id="qrCanvasDiv" style="display:inline-block; margin:auto;"></div>';
     if (typeof QRCode === 'undefined') {
       console.error('QRCode library not loaded (QRCode is undefined)');
       showAlert('QR generation library not loaded. Please refresh.', 'warning');
@@ -356,14 +404,14 @@
       if (!target) throw new Error('qrCanvasDiv target not found');
       console.log('Generating QR for link length:', (link || '').length);
 
-      // Try a sequence of QR options to maximize capacity.
+      // Try a sequence of QR options to MAXIMIZE data capacity.
+      // Primary attempt: force Version 40 (max) with lowest correction (L) and larger canvas for reliability
       const tryOptions = [];
-      // first attempt: automatic version, medium-high correction
-      tryOptions.push({ text: link, width: 300, height: 300, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.M : undefined });
-      // next: lower error correction to increase capacity
-      tryOptions.push({ text: link, width: 300, height: 300, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.L : undefined });
-      // bigger typeNumbers to allow more data (10,20,30,40)
-      [10,20,30,40].forEach(tn => tryOptions.push({ text: link, width: 300, height: 300, typeNumber: tn, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.L : undefined }));
+      tryOptions.push({ text: link, width: 500, height: 500, typeNumber: 40, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.L : undefined });
+      // Secondary large versions (in case 40 fails for library reasons)
+      [30, 20, 10].forEach(tn => tryOptions.push({ text: link, width: 500, height: 500, typeNumber: tn, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.L : undefined }));
+      // Fallback: auto version with L correction and reasonable canvas
+      tryOptions.push({ text: link, width: 400, height: 400, correctLevel: (QRCode && QRCode.CorrectLevel) ? QRCode.CorrectLevel.L : undefined });
 
       let created = false;
       let lastError = null;
@@ -925,15 +973,34 @@ function flipCamera() {
         }
 
         const compact = buildCompact(quizData);
+        
+        // For QR codes, create a minimal payload (no images) to keep size down
+        function buildMinimal(qd) {
+          // Ultra-minimal array format: [id, [[type, q, opts, ans], ...]]
+          // Aggressively truncate to fit 50+ questions in a QR (Version 40, Level L)
+          const mini = [qd.id || quizId, []];
+          (qd.questions || []).forEach(q => {
+            const t = q.type === 'tf' ? 't' : 'm';
+            // Keep T/F as very short tokens; truncate options and questions
+            const opts = q.type === 'tf' ? ['T','F'] : (q.options || []).map(o => (o || '').substring(0, 40));
+            // Truncate question to 120 chars to reduce payload for 50 questions
+            mini[1].push([t, (q.question || '').substring(0, 120), opts, q.correctAnswer || 0]);
+          });
+          return mini;
+        }
+
+        const minimal = buildMinimal(quizData);
         let safe = null;
+        
+        // Try to encode minimal format for QR (smaller)
         try {
           if (typeof LZString !== 'undefined' && LZString.compressToEncodedURIComponent) {
-            safe = LZString.compressToEncodedURIComponent(JSON.stringify(compact));
+            safe = LZString.compressToEncodedURIComponent(JSON.stringify(minimal));
           }
         } catch (e) { safe = null; }
 
         if (!safe) {
-          const encoded = btoa(JSON.stringify(compact));
+          const encoded = btoa(JSON.stringify(minimal));
           safe = encodeURIComponent(encoded);
         }
 
@@ -1228,6 +1295,71 @@ function flipCamera() {
       }
     }
     
+    // Helper: expand compact quiz format to full format
+    function expandCompactQuiz(compact) {
+      if (!compact || !compact.qs) return null;
+      const expanded = {
+        id: compact.id || 'quiz_' + Date.now(),
+        questions: compact.qs.map((entry, idx) => {
+          const [type, question, options, correctAnswer, image] = entry;
+          return {
+            id: Date.now() + idx,
+            type: type === 't' ? 'tf' : 'mc',
+            question: question || '',
+            options: options || [],
+            correctAnswer: correctAnswer || 0,
+            category: '',
+            hint: '',
+            image: image || '',
+            optionImages: []
+          };
+        }),
+        version: compact.v || '8.0'
+      };
+      return expanded;
+    }
+
+    // Helper: expand minimal quiz format (no images) to full format
+    // Handles both array format [id, [[...]]] and object format {id, q: [[...]]}
+    function expandMinimalQuiz(minimal) {
+      if (!minimal) return null;
+      
+      let id, questions;
+      
+      // Check if array format [id, [[type, q, opts, ans], ...]]
+      if (Array.isArray(minimal)) {
+        id = minimal[0] || 'quiz_' + Date.now();
+        questions = minimal[1] || [];
+      } 
+      // Check if object format {id, q: [...]}
+      else if (minimal.id && minimal.q) {
+        id = minimal.id;
+        questions = minimal.q;
+      } else {
+        return null;
+      }
+
+      const expanded = {
+        id: id,
+        questions: (questions || []).map((entry, idx) => {
+          const [type, question, options, correctAnswer] = entry;
+          return {
+            id: Date.now() + idx,
+            type: type === 't' ? 'tf' : 'mc',
+            question: question || '',
+            options: options || [],
+            correctAnswer: correctAnswer || 0,
+            category: '',
+            hint: '',
+            image: '',
+            optionImages: []
+          };
+        }),
+        version: '8.0'
+      };
+      return expanded;
+    }
+    
     // Try to parse the quiz link
     try {
       let quizData = null;
@@ -1240,16 +1372,38 @@ function flipCamera() {
         try {
           if (typeof LZString !== 'undefined' && LZString.decompressFromEncodedURIComponent) {
             const dec = LZString.decompressFromEncodedURIComponent(encodedData);
-            if (dec) quizData = JSON.parse(dec);
+            if (dec) {
+              const parsed = JSON.parse(dec);
+              // Check format: array [id, [[...]]] = minimal, 'q' obj prop = minimal, 'qs' = compact, else = full
+              if (Array.isArray(parsed) && parsed.length >= 2) {
+                quizData = expandMinimalQuiz(parsed);
+              } else if (parsed.q) {
+                quizData = expandMinimalQuiz(parsed);
+              } else if (parsed.qs) {
+                quizData = expandCompactQuiz(parsed);
+              } else {
+                quizData = parsed;
+              }
+            }
           }
         } catch (e) { quizData = null; }
 
         // Fallback to old base64 method
         if (!quizData) {
           try {
-            quizData = JSON.parse(atob(decodeURIComponent(encodedData)));
+            const decoded = JSON.parse(atob(decodeURIComponent(encodedData)));
+            // Check format: array = minimal, 'q' = minimal, 'qs' = compact
+            if (Array.isArray(decoded) && decoded.length >= 2) {
+              quizData = expandMinimalQuiz(decoded);
+            } else if (decoded.q) {
+              quizData = expandMinimalQuiz(decoded);
+            } else if (decoded.qs) {
+              quizData = expandCompactQuiz(decoded);
+            } else {
+              quizData = decoded;
+            }
           } catch (e) {
-            throw new Error('Invalid quiz format');
+            console.warn('Base64 decode failed', e);
           }
         }
       }
@@ -1259,15 +1413,27 @@ function flipCamera() {
           // Try compressed form
           if (typeof LZString !== 'undefined' && LZString.decompressFromEncodedURIComponent) {
             const dec = LZString.decompressFromEncodedURIComponent(joinInput);
-            if (dec) { quizData = JSON.parse(dec); }
+            if (dec) {
+              const parsed = JSON.parse(dec);
+              if (parsed.qs) {
+                quizData = expandCompactQuiz(parsed);
+              } else {
+                quizData = parsed;
+              }
+            }
           }
         } catch (e) { quizData = null; }
 
         if (!quizData) {
           try {
-            quizData = JSON.parse(atob(joinInput));
+            const decoded = JSON.parse(atob(joinInput));
+            if (decoded.qs) {
+              quizData = expandCompactQuiz(decoded);
+            } else {
+              quizData = decoded;
+            }
           } catch (e) {
-            throw new Error('Invalid quiz format');
+            console.warn('Direct base64 decode failed', e);
           }
         }
       }
@@ -1851,6 +2017,13 @@ function flipCamera() {
         if ($('studentJoin')) $('studentJoin').style.display = 'block';
         if ($('joinCode')) $('joinCode').value = window.location.href;
       }
+      // Attach role button listeners as a fallback in case inline onclicks don't work
+      try {
+        const teacherBtn = document.querySelector(".role-btn[onclick*='selectRole(\'teacher\')']");
+        const studentBtn = document.querySelector(".role-btn[onclick*='selectRole(\'student\')']");
+        if (teacherBtn) { teacherBtn.addEventListener('click', function(e){ e.preventDefault(); selectRole('teacher'); }); teacherBtn.removeAttribute('onclick'); }
+        if (studentBtn) { studentBtn.addEventListener('click', function(e){ e.preventDefault(); selectRole('student'); }); studentBtn.removeAttribute('onclick'); }
+      } catch (err) {}
     } catch (e) {
       console.error('init error', e);
     }
@@ -1901,6 +2074,8 @@ function flipCamera() {
   };
   window.startQrScanner = startQrScanner;
   window.stopQrScanner = stopQrScanner;
+  window.flipCamera = flipCamera;
+  window.toggleTorch = toggleTorch;
   window.generateNewQuiz = function() {
     if (!confirm('This will create a new quiz and clear existing questions and results. Continue?')) return;
     questions = [];
