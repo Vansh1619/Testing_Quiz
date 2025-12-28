@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes"/>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; script-src 'self' https: 'unsafe-inline'; style-src 'self' https: 'unsafe-inline'; img-src 'self' data: https:;">
+    <meta name="theme-color" content="#00F2FE">
+    <title>Quizoaky - Timed & Secure Quiz</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="QuizOaky_Logo.png" sizes="any">
+
+    <!-- Bootstrap CSS for responsive design -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- External CSS -->
+    <link rel="stylesheet" href="QuizOaky_Final.css">
+    
+    <!-- QR Code Library for generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    
+    <!-- QR Code Scanner - ZXing Library (more reliable) -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.2/umd/index.min.js"></script>
+    
+    <!-- Fallback: Html5Qrcode with multiple CDN sources -->
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+    <!-- Chart.js for analytics -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body data-theme="light">
+    <div class="container" role="main">
+        <div class="header">
+            <div class="header-top">
+                <div class="header-content">
+                    <h1>Quizoaky</h1>
+                    <p>Universal Compatibility: Works on Any Phone, Tablet, or PC.</p>
+                </div>
+                <button id="themeToggle" class="btn btn-light btn-sm theme-btn" onclick="toggleTheme()" aria-label="Toggle dark mode">
+                    <span class="theme-icon">Light</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="content">
+            <div id="roleSelection" class="role-selection" aria-label="Role selection">
+                <h2>Choose Your Role</h2>
+                <p>Students can use any device<br>Results are automatically collected in the teacher's Excel!</p>
+                
+                <div class="role-buttons">
+                    <button class="btn btn-primary btn-lg role-btn" onclick="selectRole('teacher')" aria-label="Select teacher role">
+                        <strong>Teacher</strong><br>
+                        <small>Create quiz &amp; collect results</small>
+                    </button>
+                    <button class="btn btn-success btn-lg role-btn" onclick="selectRole('student')" aria-label="Select student role">
+                        <strong>Student</strong><br>
+                        <small>Take quiz on any device</small>
+                    </button>
+                </div>
+            </div>
+
+            <div id="teacherPanel" class="panel" aria-hidden="true">
+                <button class="btn btn-outline-secondary btn-sm back-btn" onclick="goHome()">Back to Home</button>
+                
+                <div id="shareSection" class="share-section alert alert-success" style="display: none;">
+                    <h3>Share Quiz Link with Students</h3>
+                    <p><strong>Quiz ID:</strong> <span id="displayQuizId">Generating...</span></p>
+                    
+                    <div class="quiz-link" id="quizLink">Generating quiz link...</div>
+                    <button class="btn btn-primary btn-sm" id="copyQuizBtn" onclick="copyQuizLink()" aria-label="Copy quiz link">Copy Quiz Link</button>
+                    
+                    <div id="qrContainer" style="margin-top: 15px; text-align: center;"></div>
+                    <button class="btn btn-info btn-sm" id="qrToggleBtn" onclick="toggleQRCode()" style="margin-top: 10px;">Show QR Code</button>
+                    
+                    <p style="margin-top: 15px; color: #2e7d32; font-weight: bold;">
+                        Students will send you their result links automatically after completing the quiz!
+                    </p>
+                </div>
+
+                <div class="section">
+                    <h3>Create New Question</h3>
+                    <form id="questionForm">
+                        <div class="form-group">
+                            <label>Question Type:</label>
+                            <select id="questionType" onchange="updateQuestionForm()">
+                                <option value="mc">Multiple Choice (A, B, C, D)</option>
+                                <option value="tf">True / False</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Category (optional):</label>
+                            <input type="text" id="questionCategory" placeholder="e.g., Biology, Chapter 5">
+                        </div>
+                        <div class="form-group">
+                            <label>Question:</label>
+                            <textarea id="questionText" placeholder="Enter your question here..." rows="3" required></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Hint (optional):</label>
+                            <input type="text" id="questionHint" placeholder="Optional hint for students">
+                        </div>
+                        <div class="form-group">
+                            <label>Explanation (optional):</label>
+                            <textarea id="questionExplanation" placeholder="Explanation shown after quiz" rows="2"></textarea>
+                        </div>
+                        
+                        <div id="mcOptions" class="form-group">
+                            <label>Answer Options (select the correct answer):</label>
+                            <div class="options-container">
+                                <div class="option-input">
+                                    <input type="radio" name="correctOption" value="0" required>
+                                    <span class="option-label">A.</span>
+                                    <input type="text" id="optionText0" placeholder="Enter option A" required>
+                                    <input type="text" id="optionImage0" placeholder="Image URL (optional)" style="flex: 0.5;">
+                                </div>
+                                <div class="option-input">
+                                    <input type="radio" name="correctOption" value="1">
+                                    <span class="option-label">B.</span>
+                                    <input type="text" id="optionText1" placeholder="Enter option B" required>
+                                    <input type="text" id="optionImage1" placeholder="Image URL (optional)" style="flex: 0.5;">
+                                </div>
+                                <div class="option-input">
+                                    <input type="radio" name="correctOption" value="2">
+                                    <span class="option-label">C.</span>
+                                    <input type="text" id="optionText2" placeholder="Enter option C" required>
+                                    <input type="text" id="optionImage2" placeholder="Image URL (optional)" style="flex: 0.5;">
+                                </div>
+                                <div class="option-input">
+                                    <input type="radio" name="correctOption" value="3">
+                                    <span class="option-label">D.</span>
+                                    <input type="text" id="optionText3" placeholder="Enter option D" required>
+                                    <input type="text" id="optionImage3" placeholder="Image URL (optional)" style="flex: 0.5;">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="tfOptions" class="form-group" style="display:none;">
+                            <label>Select the correct answer:</label>
+                            <div style="display: flex; gap: 20px;">
+                                <label><input type="radio" name="tfCorrectOption" value="0"> True</label>
+                                <label><input type="radio" name="tfCorrectOption" value="1"> False</label>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Add Question</button>
+                        <button type="button" class="btn btn-info" onclick="exportQuestions()">Export Questions</button>
+                        <button type="button" class="btn btn-success" onclick="generateNewQuiz()">New Quiz</button>
+                    </form>
+                </div>
+
+                <div class="section">
+                    <h3>Questions (<span id="questionCount">0</span>)</h3>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-md-6">
+                            <input type="text" id="questionSearch" class="form-control" placeholder="Search questions...">
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <select id="categoryFilter" class="form-select">
+                                <option value="">All Categories</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <button type="button" class="btn btn-info w-100" onclick="toggleQuestionShuffle()" id="shuffleBtn">Shuffle: OFF</button>
+                        </div>
+                    </div>
+                    <div id="questionsList" class="questions-list"></div>
+                    <button id="clearQsBtn" class="btn btn-danger btn-sm" onclick="clearAllQuestions()" style="margin-top: 10px;">
+                        Clear Questions
+                    </button>
+                </div>
+                
+                <div class="section">
+                    <h3>Quiz Preview</h3>
+                    <button type="button" class="btn btn-info" onclick="previewQuiz()">Preview Quiz for Students</button>
+                    <div id="previewSection" style="display: none; margin-top: 15px; padding: 15px; background: #f0f8ff; border: 1px solid #007bff; border-radius: 5px;">
+                        <h4>Quiz Preview (First 3 Questions)</h4>
+                        <div id="previewContent"></div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Import Questions</h3>
+                    <input type="file" id="csvFile" accept=".csv" style="margin-bottom: 10px;">
+                    <button type="button" class="btn btn-info" onclick="importCSV()">Import from CSV</button>
+                    <p style="font-size: 0.9rem; color: #666; margin-top: 10px;"><strong>CSV Format:</strong> Question,Option A,Option B,Option C,Option D,Correct (0-3),Category,Hint,Explanation</p>
+                </div>
+
+                <div class="section">
+                    <h3>Collect Student Results</h3>
+                    <div class="collect-section">
+                        <h4>Paste Student Result Links Here:</h4>
+                        <p style="margin-bottom: 10px; color: #666;">Students will share result links with you after completing the quiz. Paste all links below (one per line):</p>
+                        <textarea id="resultUrls" class="form-control" placeholder="Paste student result links here, one per line..." rows="5"></textarea>
+                        <button id="collectBtn" class="btn btn-primary btn-sm mt-2" onclick="collectResults()" aria-label="Collect student results">Collect All Results</button>
+                    </div>
+                    
+                    <div id="collectedResultsList" class="results-list mt-3">
+                        <p style="text-align: center; color: #666; padding: 20px;">No results collected yet. Results will appear here when you paste student result links above.</p>
+                    </div>
+                    
+                    <div style="margin-top: 15px;">
+                        <button id="downloadAllBtn" class="btn btn-success btn-sm" onclick="downloadAllResults()" aria-label="Download all results">Download All Results (Excel)</button>
+                        <button id="analyticsBtn" class="btn btn-info btn-sm" onclick="showAnalytics()">View Analytics</button>
+                        <button id="clearResultsBtn" class="btn btn-danger btn-sm" onclick="clearCollectedResults()">Clear Results</button>
+                    </div>
+                    
+                    <div id="analyticsSection" style="display: none; margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px;">
+                        <h3>Analytics Dashboard</h3>
+                        <div id="analyticsContent"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="studentJoin" class="panel" aria-hidden="true">
+                <button class="btn btn-outline-secondary btn-sm back-btn" onclick="goHome()">Back to Home</button>
+                
+                <div class="section">
+                    <h3>Join a Quiz</h3>
+                    <div class="form-group">
+                        <label>Your Name:</label>
+                        <input type="text" id="studentName" class="form-control" placeholder="Enter your full name" required>
+                    </div>
+                    
+                    <!-- Tabs for different join methods -->
+                    <ul class="nav nav-tabs mb-3" id="joinMethodTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="paste-link-tab" data-bs-toggle="tab" data-bs-target="#paste-link" type="button">Paste Link</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="scan-qr-tab" data-bs-toggle="tab" data-bs-target="#scan-qr" type="button">Scan QR Code</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="enter-code-tab" data-bs-toggle="tab" data-bs-target="#enter-code" type="button">Enter Code</button>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content" id="joinMethodContent">
+                        <!-- Tab 1: Paste Link -->
+                        <div class="tab-pane fade show active" id="paste-link" role="tabpanel">
+                            <div class="form-group">
+                                <label><strong>Paste Quiz Link</strong></label>
+                                <textarea id="joinCode" class="form-control" placeholder="Paste the complete quiz link your teacher shared..." rows="3"></textarea>
+                                <small class="text-muted d-block mt-2">Your teacher will provide a link starting with 'http://' or 'https://'</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Tab 2: Scan QR -->
+                        <div class="tab-pane fade" id="scan-qr" role="tabpanel">
+                            <div class="form-group">
+                                <label><strong>Scan QR Code</strong></label>
+                                <div class="d-flex gap-2 mb-2">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="startQrScanner()">Start Camera</button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm" onclick="stopQrScanner()">Stop Camera</button>
+                                </div>
+                                <div id="qrReader" style="display:none; width:100%; max-width:100%; height:360px; margin: 10px auto 0; border-radius:8px; overflow:hidden; background:#000; position:relative;"></div>
+                                <div id="qrScannerStatus" style="margin-top: 10px; padding: 10px; background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 4px; color: #004085; font-size: 0.9rem; display:none;">
+                                    <strong>Camera Active:</strong> Point your device at a QR code to scan it. The quiz code will be automatically filled below.
+                                </div>
+                                <textarea id="qrScanResult" class="form-control mt-2" placeholder="Scanned QR code will appear here..." rows="2" readonly></textarea>
+                                <small class="text-muted d-block mt-2">Camera access is required. Grant permissions when prompted.</small>
+                            </div>
+                        </div>
+                        
+                        <!-- Tab 3: Enter Code -->
+                        <div class="tab-pane fade" id="enter-code" role="tabpanel">
+                            <div class="form-group">
+                                <label><strong>Enter Quiz Code</strong></label>
+                                <input type="text" id="quizCodeInput" class="form-control" placeholder="Enter the quiz code from your teacher" maxlength="500">
+                                <button type="button" class="btn btn-outline-secondary btn-sm mt-2" onclick="pasteQuizCodeFromClipboard()">Paste from Clipboard</button>
+                                <small class="text-muted d-block mt-2">Ask your teacher for the quiz code if you don't have a full link</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-primary btn-lg w-100 mt-3" onclick="joinQuiz()" aria-label="Join quiz">Join Quiz</button>
+                    
+                    <p style="margin-top: 20px; color: #666; text-align: center; font-size: 0.85rem;">
+                        <small>Choose any method: paste link, scan QR, or enter code. After completing, you'll get a result link to share with your teacher!</small>
+                    </p>
+                </div>
+            </div>
+
+            <div id="studentPanel" class="panel" aria-hidden="true">
+                <button class="btn btn-outline-secondary btn-sm back-btn" onclick="goBackToJoin()">Enter Different Link</button>
+                
+                <div class="student-info alert alert-info">
+                    <div class="student-name"><strong>Student:</strong> <span id="currentStudentName">Unknown</span></div>
+                    <div style="font-size: 0.8rem; color: #666; margin-top: 5px;">Quiz ID: <span id="studentQuizId">Unknown</span></div>
+                </div>
+                
+                <div id="quizStart" class="section">
+                    <h3>Ready to Take the Quiz?</h3>
+                    <p id="quizInfo">Loading quiz information...</p>
+                    <div id="quizSettings" class="card bg-light mb-3">
+                        <div class="card-body">
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="shuffleQuestionsCheck">
+                                <label class="form-check-label" for="shuffleQuestionsCheck">
+                                    Shuffle Questions
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="showHintsCheck" checked>
+                                <label class="form-check-label" for="showHintsCheck">
+                                    Show Hints During Quiz
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="startQuizBtn" class="btn btn-primary btn-lg w-100" onclick="startQuiz()" disabled aria-label="Start quiz">
+                        Start Quiz
+                    </button>
+                </div>
+
+                <div id="quizInterface" class="quiz-interface">
+                    <div class="progress-container">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span id="progressText" style="font-size: 0.9rem; color: #666;">Question 1 of X</span>
+                        <span id="quizTimer" style="font-size: 0.9rem; color: #ff6b6b; font-weight: bold;"></span>
+                    </div>
+                    
+                    <div id="currentQuestion" class="question-container"></div>
+
+                    <div class="navigation mt-3">
+                        <button class="btn btn-warning" id="pauseBtn" onclick="pauseQuiz()">Pause</button>
+                        <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">
+                            Next
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="pauseScreen" style="display: none; text-align: center; padding: 40px;">
+                    <h2>Quiz Paused</h2>
+                    <p style="font-size: 1.2rem; margin: 20px 0;">Time Remaining: <span id="pausedTimeDisplay">00:00</span></p>
+                    <button class="btn btn-primary btn-lg" onclick="resumeQuiz()" style="margin: 10px;">Resume Quiz</button>
+                    <button class="btn btn-danger btn-lg" onclick="endQuizEarly()" style="margin: 10px;">End Quiz</button>
+                </div>
+
+                <div id="results" class="results">
+                    <div class="score-circle" id="scoreCircle">0/0</div>
+                    <h2 id="resultTitle">Quiz Complete!</h2>
+                    <p id="resultMessage">Great job on completing the quiz!</p>
+                    
+                    <div id="resultUrlSection" class="alert alert-warning">
+                        <h4>IMPORTANT: Share This Link with Your Teacher</h4>
+                        <p><strong>Copy and send this link to your teacher:</strong></p>
+                        <div class="result-url" id="resultUrl">Generating...</div>
+                        <button class="btn btn-primary btn-sm mt-2" id="copyResultBtn" onclick="copyResultUrl()">Copy Result Link</button>
+                        <p style="margin-top: 10px;"><small>Your teacher needs this link to include your score in the class results Excel file!</small></p>
+                    </div>
+                    
+                    <div id="reviewSection" style="display: none; margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px;">
+                        <h3>Review Your Answers</h3>
+                        <div id="reviewContent"></div>
+                    </div>
+                    <button class="btn btn-info btn-sm" onclick="toggleReview()" style="margin-top: 15px;">Review Answers</button>
+                    
+                    <div style="margin-top: 30px;">
+                        <button class="btn btn-primary btn-sm" onclick="downloadResults()">
+                            Download My Results
+                        </button>
+                        <button class="btn btn-secondary btn-sm" id="retakeBtn" onclick="retakeQuiz()">
+                            Retake Quiz
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Built with Love by Vansh, Prushti & Hetu — 2025.</p>
+        </div>
+    </div>
+
+    <!-- xlsx library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Bootstrap Bundle JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <!-- External JS -->
+    <script src="QuizOaky_Final.js"></script>
+</body>
+</html>
