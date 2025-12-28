@@ -348,21 +348,21 @@
     if (qrScannerActive) return showAlert('Scanner already running', 'info');
     
     console.log('Starting QR scanner...');
-    console.log('ZXing available:', typeof ZXing !== 'undefined');
     console.log('Html5Qrcode available:', typeof Html5Qrcode !== 'undefined');
+    console.log('ZXing available:', typeof ZXing !== 'undefined');
     
-    // Try ZXing first (more reliable)
-    if (typeof ZXing !== 'undefined' && ZXing.BrowserCodeReader) {
-      tryZXingScan(reader, statusBox, resultBox);
-    }
-    // Fall back to Html5Qrcode
-    else if (typeof Html5Qrcode !== 'undefined') {
+    // Prioritize Html5Qrcode for better mobile compatibility
+    if (typeof Html5Qrcode !== 'undefined') {
       tryHtml5QrcodeScan(reader, statusBox, resultBox);
+    }
+    // Fallback to ZXing
+    else if (typeof ZXing !== 'undefined' && ZXing.BrowserCodeReader) {
+      tryZXingScan(reader, statusBox, resultBox);
     }
     // Both failed
     else {
       showAlert('QR scanner libraries not loaded. Please try refreshing the page or use another join method.', 'warning');
-      console.error('Neither ZXing nor Html5Qrcode available');
+      console.error('Neither Html5Qrcode nor ZXing available');
     }
   }
 
@@ -377,12 +377,9 @@
       video.setAttribute('playsinline', '');
       reader.appendChild(video);
 
-      // Use QR-specific reader for faster, more accurate QR scanning
       codeReader = new ZXing.BrowserQRCodeReader();
-      // Prefer rear camera: try to find a device labeled back/rear or use the last device
       codeReader.listVideoInputDevices().then(devices => {
         videoInputDevices = devices || [];
-        // choose rear if available
         let chosenDeviceId = undefined;
         currentVideoDeviceIndex = 0;
         if (videoInputDevices.length) {
@@ -397,60 +394,110 @@
           }
         }
 
-        // show flip button if multiple devices
         try { if (videoInputDevices.length > 1) { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'inline-block'; } } catch(e){}
 
-        // Start decoding from video device
-        codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
-          if (result) {
-            // clear detection timer
-            try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
-            console.log('QR code detected:', result.text);
-            const text = result.text.trim();
-            if (resultBox) resultBox.value = text;
-            const joinCodeEl = $('joinCode');
-            if (joinCodeEl) joinCodeEl.value = text;
-            if (statusBox) statusBox.innerText = 'QR code detected.';
-            showAlert('QR code scanned successfully!', 'success');
-            stopQrScanner();
-            return;
+        // More lenient mobile constraints
+        const constraints = {
+          video: {
+            deviceId: chosenDeviceId ? { exact: chosenDeviceId } : undefined,
+            facingMode: { ideal: 'environment' }
           }
-          if (err && err.name !== 'NotFoundException') {
-            console.warn('ZXing error:', err);
-          }
-        }).then(() => {
-          qrScannerActive = true;
-          if (statusBox) statusBox.innerText = 'Camera started. Point at a QR code.';
-          showAlert('Camera started! Point at QR code to scan.', 'info');
-          // If no QR detected within 10s, fallback to Html5Qrcode which may be more tolerant
-          try {
-            if (qrDetectionTimer) clearTimeout(qrDetectionTimer);
-            qrDetectionTimer = setTimeout(() => {
-              console.warn('ZXing did not detect QR within timeout, switching to Html5Qrcode fallback');
-              try {
-                stopQrScanner();
-              } catch(e){}
-              tryHtml5QrcodeScan(reader, statusBox, resultBox);
-            }, 10000);
-          } catch(e) { console.warn('Could not set detection timer', e); }
-        }).catch(err => {
-          console.error('ZXing scan error:', err);
-          reader.style.display = 'none';
-          if (statusBox) statusBox.style.display = 'none';
+        };
 
-          if (err && err.name === 'NotAllowedError') {
-            showAlert('Camera permission denied. Please enable camera access in your browser settings.', 'warning');
-          } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) {
-            showAlert('No camera found on device. Trying alternative scanner...', 'warning');
-            setTimeout(() => tryHtml5QrcodeScan(reader, statusBox, resultBox), 500);
-          } else {
-            showAlert('Camera error: ' + (err && err.message ? err.message : String(err)), 'warning');
-          }
+        navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+          scanningStream = stream;
+          video.srcObject = stream;
+          video.play().catch(err => console.warn('Video play failed:', err));
+
+          codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
+            if (result) {
+              try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
+              console.log('QR code detected:', result.text);
+              const text = result.text.trim();
+              if (resultBox) resultBox.value = text;
+              const joinCodeEl = $('joinCode');
+              if (joinCodeEl) joinCodeEl.value = text;
+              if (statusBox) statusBox.innerText = 'QR code detected!';
+              showAlert('QR code scanned successfully!', 'success');
+              stopQrScanner();
+              return;
+            }
+          }).then(() => {
+            qrScannerActive = true;
+            if (statusBox) statusBox.innerText = 'Camera active. Point at QR code...';
+            showAlert('Camera started! Point at QR code.', 'info');
+          }).catch(err => {
+            console.warn('ZXing decode error, trying fallback:', err);
+          });
+        }).catch(err => {
+          console.warn('getUserMedia failed with strict constraints, trying without deviceId:', err);
+          // Retry with more lenient constraints
+          navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } }).then(stream => {
+            scanningStream = stream;
+            video.srcObject = stream;
+            video.play().catch(e => console.warn('Video play failed:', e));
+            
+            codeReader.decodeFromVideoDevice(undefined, video, (result, err) => {
+              if (result) {
+                console.log('QR code detected:', result.text);
+                const text = result.text.trim();
+                if (resultBox) resultBox.value = text;
+                const joinCodeEl = $('joinCode');
+                if (joinCodeEl) joinCodeEl.value = text;
+                showAlert('QR code scanned successfully!', 'success');
+                stopQrScanner();
+              }
+            }).then(() => {
+              qrScannerActive = true;
+              if (statusBox) statusBox.innerText = 'Camera active. Point at QR code...';
+              showAlert('Camera started! Point at QR code.', 'info');
+            }).catch(err2 => {
+              console.error('ZXing fallback error:', err2);
+              tryHtml5QrcodeScan(reader, statusBox, resultBox);
+            });
+          }).catch(err2 => {
+            console.error('Even lenient getUserMedia failed:', err2);
+            reader.style.display = 'none';
+            if (statusBox) statusBox.style.display = 'none';
+            
+            if (err2 && err2.name === 'NotAllowedError') {
+              showAlert('Camera permission denied. Enable in phone settings.', 'warning');
+            } else if (err2 && (err2.name === 'NotFoundError' || err2.name === 'NotReadableError')) {
+              showAlert('Camera not available. Close other apps using camera.', 'warning');
+            } else {
+              showAlert('Camera error: ' + (err2 && err2.message ? err2.message : String(err2)), 'warning');
+            }
+            
+            tryHtml5QrcodeScan(reader, statusBox, resultBox);
+          });
         });
       }).catch(err => {
-        console.warn('ZXing listVideoInputDevices error:', err);
-        // fallback to Html5Qrcode
-        tryHtml5QrcodeScan(reader, statusBox, resultBox);
+        console.warn('listVideoInputDevices error:', err);
+        // Try without device selection
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } }).then(stream => {
+          scanningStream = stream;
+          video.srcObject = stream;
+          video.play().catch(e => console.warn('Video play failed:', e));
+          
+          codeReader.decodeFromVideoDevice(undefined, video, (result, err) => {
+            if (result) {
+              console.log('QR code detected:', result.text);
+              const text = result.text.trim();
+              if (resultBox) resultBox.value = text;
+              const joinCodeEl = $('joinCode');
+              if (joinCodeEl) joinCodeEl.value = text;
+              showAlert('QR code scanned successfully!', 'success');
+              stopQrScanner();
+            }
+          }).then(() => {
+            qrScannerActive = true;
+            if (statusBox) statusBox.innerText = 'Camera active. Point at QR code...';
+            showAlert('Camera started! Point at QR code.', 'info');
+          }).catch(e => console.warn('Decode error:', e));
+        }).catch(err2 => {
+          console.error('getUserMedia failed:', err2);
+          tryHtml5QrcodeScan(reader, statusBox, resultBox);
+        });
       });
     } catch (e) {
       console.error('ZXing exception:', e);
@@ -493,84 +540,79 @@
         if (!cameraId && videoInputDevices.length) { currentVideoDeviceIndex = videoInputDevices.length - 1; cameraId = videoInputDevices[currentVideoDeviceIndex].id; }
         try { if (videoInputDevices.length > 1) { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'inline-block'; } } catch(e){}
 
+        // Mobile-optimized config: lower fps for better performance on slower phones
         const config = {
-          fps: 10,
-          qrbox: { width: Math.min(300, Math.floor(window.innerWidth * 0.8)), height: Math.min(300, Math.floor(window.innerWidth * 0.8)) },
+          fps: 5,
+          qrbox: { width: Math.min(250, Math.floor(window.innerWidth * 0.7)), height: Math.min(250, Math.floor(window.innerWidth * 0.7)) },
           aspectRatio: 1.0,
-          disableFlip: false
+          disableFlip: false,
+          rememberLastUsedCamera: true,
+          showTorchButtonIfSupported: true
         };
 
-        // Try to get the media stream for torch support
-        navigator.mediaDevices.getUserMedia({ video: { deviceId: cameraId ? { exact: cameraId } : undefined } }).then(stream => {
-          scanningStream = stream;
-          // Now start the scanner
-          html5QrScanner.start(
-            cameraId,
-            config,
-            (decodedText) => {
-              console.log('QR code decoded:', decodedText);
-              const text = decodedText.trim();
-              if (resultBox) resultBox.value = text;
-              const joinCodeEl = $('joinCode');
-              if (joinCodeEl) joinCodeEl.value = text;
-              if (statusBox) statusBox.innerText = 'QR code detected.';
-              showAlert('QR code scanned successfully!', 'success');
-              stopQrScanner();
-            },
-            (error) => {
-              // ignore intermittent scan failures silently
+        // Start scanner
+        html5QrScanner.start(
+          cameraId,
+          config,
+          (decodedText) => {
+            console.log('QR code decoded:', decodedText);
+            const text = decodedText.trim();
+            if (resultBox) resultBox.value = text;
+            const joinCodeEl = $('joinCode');
+            if (joinCodeEl) joinCodeEl.value = text;
+            if (statusBox) statusBox.innerText = 'QR code detected!';
+            showAlert('QR code scanned successfully!', 'success');
+            stopQrScanner();
+          },
+          (error) => {
+            // Silently ignore scanning errors
+            console.debug('Scanning attempt:', error);
+          }
+        ).then(() => {
+          qrScannerActive = true;
+          if (statusBox) statusBox.innerText = 'Camera active. Point at QR code...';
+          showAlert('Camera started! Point at QR code.', 'info');
+          // Show torch button if supported
+          try {
+            const tbtn = $('torchBtn');
+            if (tbtn && html5QrScanner && html5QrScanner.getRunningTrackSettings) {
+              tbtn.style.display = 'inline-block';
             }
-          ).then(() => {
-            qrScannerActive = true;
-            if (statusBox) statusBox.innerText = 'Camera started. Point at a QR code.';
-            showAlert('Camera started! Point at QR code to scan.', 'info');
-          }).catch(err => {
-            console.error('Html5Qrcode start error:', err);
-            reader.style.display = 'none';
-            if (statusBox) statusBox.style.display = 'none';
-            showAlert('Camera access failed. Please try another join method.', 'warning');
-          });
+          } catch(e) { console.debug('Torch not available'); }
         }).catch(err => {
-          console.warn('Could not get media stream for torch, continuing without torch support:', err);
-          // Continue without getting the stream (torch won't work but scanner will)
-          html5QrScanner.start(
-            cameraId,
-            config,
-            (decodedText) => {
-              console.log('QR code decoded:', decodedText);
-              const text = decodedText.trim();
-              if (resultBox) resultBox.value = text;
-              const joinCodeEl = $('joinCode');
-              if (joinCodeEl) joinCodeEl.value = text;
-              if (statusBox) statusBox.innerText = 'QR code detected.';
-              showAlert('QR code scanned successfully!', 'success');
-              stopQrScanner();
-            },
-            (error) => {
-              // ignore intermittent scan failures silently
-            }
-          ).then(() => {
-            qrScannerActive = true;
-            if (statusBox) statusBox.innerText = 'Camera started. Point at a QR code.';
-            showAlert('Camera started! Point at QR code to scan.', 'info');
-          }).catch(err2 => {
-            console.error('Html5Qrcode start error:', err2);
-            reader.style.display = 'none';
-            if (statusBox) statusBox.style.display = 'none';
-            showAlert('Camera access failed. Please try another join method.', 'warning');
-          });
+          console.error('Html5Qrcode start error:', err);
+          reader.style.display = 'none';
+          if (statusBox) statusBox.style.display = 'none';
+          
+          if (err && err.name === 'NotAllowedError') {
+            showAlert('Camera permission denied. Please enable camera in settings and reload.', 'warning');
+          } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError' || err.name === 'NotReadableError')) {
+            showAlert('Camera not available. Try closing other camera apps.', 'warning');
+          } else {
+            showAlert('Camera failed: ' + (err && err.message ? err.message : String(err)), 'warning');
+          }
+          
+          // Fallback to ZXing
+          if (typeof ZXing !== 'undefined' && ZXing.BrowserCodeReader) {
+            setTimeout(() => tryZXingScan(reader, statusBox, resultBox), 500);
+          }
         });
       }).catch(err => {
         console.error('Camera access error:', err);
         reader.style.display = 'none';
         if (statusBox) statusBox.style.display = 'none';
-        showAlert('Could not access camera. Please check permissions and try again.', 'warning');
+        
+        if (err && err.name === 'NotAllowedError') {
+          showAlert('Camera permission denied. Enable in phone settings.', 'warning');
+        } else {
+          showAlert('Could not access camera. Check permissions and try again.', 'warning');
+        }
       });
     } catch (e) {
       console.error('Html5Qrcode exception:', e);
       reader.style.display = 'none';
       if (statusBox) statusBox.style.display = 'none';
-      showAlert('Scanner failed. Please use another join method.', 'warning');
+      showAlert('Scanner failed. Try another join method.', 'warning');
     }
   }
 
