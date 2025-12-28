@@ -21,6 +21,8 @@
     
     <!-- QR Code Library for generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- LZ-String for compressing quiz payloads in URLs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
     
     <!-- QR Code Scanner - ZXing Library (more reliable) -->
     <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.2/umd/index.min.js"></script>
@@ -38,8 +40,9 @@
                     <h1>Quizoaky</h1>
                     <p>Universal Compatibility: Works on Any Phone, Tablet, or PC.</p>
                 </div>
-                <button id="themeToggle" class="btn btn-light btn-sm theme-btn" onclick="toggleTheme()" aria-label="Toggle dark mode">
-                    <span class="theme-icon">Light</span>
+                <button id="themeToggle" class="theme-btn" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle Dark/Light Mode">
+                    <span class="theme-icon-circle"></span>
+                    <span class="theme-label"><span class="theme-text">Light</span></span>
                 </button>
             </div>
         </div>
@@ -69,10 +72,12 @@
                     <p><strong>Quiz ID:</strong> <span id="displayQuizId">Generating...</span></p>
                     
                     <div class="quiz-link" id="quizLink">Generating quiz link...</div>
-                    <button class="btn btn-primary btn-sm" id="copyQuizBtn" onclick="copyQuizLink()" aria-label="Copy quiz link">Copy Quiz Link</button>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 15px;">
+                        <button class="btn btn-primary btn-lg flex-grow-1" id="copyQuizBtn" onclick="copyQuizLink()" aria-label="Copy quiz link">Copy Quiz Link</button>
+                        <button class="btn btn-info btn-lg flex-grow-1" id="qrToggleBtn" onclick="toggleQRCode()">Show QR Code</button>
+                    </div>
                     
                     <div id="qrContainer" style="margin-top: 15px; text-align: center;"></div>
-                    <button class="btn btn-info btn-sm" id="qrToggleBtn" onclick="toggleQRCode()" style="margin-top: 10px;">Show QR Code</button>
                     
                     <p style="margin-top: 15px; color: #2e7d32; font-weight: bold;">
                         Students will send you their result links automatically after completing the quiz!
@@ -102,8 +107,9 @@
                             <input type="text" id="questionHint" placeholder="Optional hint for students">
                         </div>
                         <div class="form-group">
-                            <label>Explanation (optional):</label>
-                            <textarea id="questionExplanation" placeholder="Explanation shown after quiz" rows="2"></textarea>
+                            <label>Question Image (optional):</label>
+                            <input type="text" id="questionImage" placeholder="Image URL (e.g., https://example.com/image.jpg)">
+                            <small class="text-muted d-block mt-2">Paste the full image URL to display an image with your question</small>
                         </div>
                         
                         <div id="mcOptions" class="form-group">
@@ -143,9 +149,11 @@
                             </div>
                         </div>
                         
-                        <button type="submit" class="btn btn-primary">Add Question</button>
-                        <button type="button" class="btn btn-info" onclick="exportQuestions()">Export Questions</button>
-                        <button type="button" class="btn btn-success" onclick="generateNewQuiz()">New Quiz</button>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 20px;">
+                            <button type="submit" class="btn btn-primary btn-lg">Add Question</button>
+                            <button type="button" class="btn btn-info btn-lg" onclick="exportQuestions()">Export Questions</button>
+                            <button type="button" class="btn btn-success btn-lg" onclick="generateNewQuiz()">New Quiz</button>
+                        </div>
                     </form>
                 </div>
 
@@ -165,14 +173,16 @@
                         </div>
                     </div>
                     <div id="questionsList" class="questions-list"></div>
-                    <button id="clearQsBtn" class="btn btn-danger btn-sm" onclick="clearAllQuestions()" style="margin-top: 10px;">
-                        Clear Questions
-                    </button>
+                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button id="clearQsBtn" class="btn btn-danger" onclick="clearAllQuestions()" title="Delete all questions from the quiz">
+                            <span>Clear All Questions</span>
+                        </button>
+                    </div>
                 </div>
                 
                 <div class="section">
                     <h3>Quiz Preview</h3>
-                    <button type="button" class="btn btn-info" onclick="previewQuiz()">Preview Quiz for Students</button>
+                    <button type="button" class="btn btn-info btn-lg w-100" onclick="previewQuiz()">👁️ Preview Quiz for Students</button>
                     <div id="previewSection" style="display: none; margin-top: 15px; padding: 15px; background: #f0f8ff; border: 1px solid #007bff; border-radius: 5px;">
                         <h4>Quiz Preview (First 3 Questions)</h4>
                         <div id="previewContent"></div>
@@ -181,9 +191,11 @@
                 
                 <div class="section">
                     <h3>Import Questions</h3>
-                    <input type="file" id="csvFile" accept=".csv" style="margin-bottom: 10px;">
-                    <button type="button" class="btn btn-info" onclick="importCSV()">Import from CSV</button>
-                    <p style="font-size: 0.9rem; color: #666; margin-top: 10px;"><strong>CSV Format:</strong> Question,Option A,Option B,Option C,Option D,Correct (0-3),Category,Hint,Explanation</p>
+                    <div class="mb-3">
+                        <input type="file" id="csvFile" accept=".csv" class="form-control" style="margin-bottom: 10px;">
+                        <button type="button" class="btn btn-success btn-lg w-100" onclick="importCSV()">📥 Import from CSV</button>
+                    </div>
+                    <p style="font-size: 0.9rem; color: #666; margin-top: 10px;"><strong>CSV Format:</strong> Question,Option A,Option B,Option C,Option D,Correct (0-3),Category,Hint</p>
                 </div>
 
                 <div class="section">
