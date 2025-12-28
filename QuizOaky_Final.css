@@ -194,29 +194,114 @@ body[data-theme="dark"] {
 .theme-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
+    gap: 8px;
+    transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
     cursor: pointer;
     white-space: nowrap;
     position: relative;
     z-index: 100;
-    padding: 8px 14px;
-    border-radius: 20px;
+    padding: 10px 16px;
+    border-radius: 25px;
     font-weight: 600;
-    font-size: 0.9rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    background: rgba(255,255,255,0.95);
-    border: 2px solid rgba(0, 242, 254, 0.5);
-    color: #333;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 15px rgba(0, 242, 254, 0.2);
+    background: linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(240,250,255,0.95) 100%);
+    border: 2px solid rgba(0, 242, 254, 0.6);
+    color: #1a1a1a;
+    outline: none;
 }
 
 .theme-btn:hover {
-    transform: scale(1.05);
-    box-shadow: 0 6px 20px rgba(0, 242, 254, 0.3);
+    transform: translateY(-2px) scale(1.08);
+    box-shadow: 0 8px 25px rgba(0, 242, 254, 0.35);
+    border-color: rgba(0, 242, 254, 0.9);
 }
 
-/* Clear visual indicator for the small text inside the button */
-.theme-btn .theme-icon { font-weight: 700; }
+.theme-btn:active {
+    transform: translateY(0) scale(1.03);
+}
+
+/* Icon circle with moon/sun effect */
+.theme-icon-circle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #00F2FE 0%, #FF00D4 100%);
+    font-size: 12px;
+    color: white;
+    font-weight: 900;
+    transition: all 0.25s ease;
+}
+
+.theme-btn:hover .theme-icon-circle {
+    box-shadow: 0 0 12px rgba(0, 242, 254, 0.8);
+}
+
+/* Theme label text */
+.theme-label {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.9rem;
+}
+
+.theme-text {
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+/* Dark mode button appearance */
+body[data-theme="dark"] .theme-btn {
+    background: linear-gradient(135deg, rgba(45, 45, 45, 0.98) 0%, rgba(60, 60, 70, 0.95) 100%);
+    border-color: rgba(255, 0, 212, 0.6);
+    color: #f0f0f0;
+    box-shadow: 0 4px 15px rgba(255, 0, 212, 0.2);
+}
+
+body[data-theme="dark"] .theme-btn:hover {
+    box-shadow: 0 8px 25px rgba(255, 0, 212, 0.35);
+    border-color: rgba(255, 0, 212, 0.9);
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .theme-btn {
+        padding: 8px 12px;
+        font-size: 0.8rem;
+        gap: 6px;
+    }
+    
+    .theme-icon-circle {
+        width: 18px;
+        height: 18px;
+        font-size: 10px;
+    }
+    
+    .theme-label {
+        font-size: 0.75rem;
+    }
+}
+
+/* Extra small devices */
+@media (max-width: 480px) {
+    .theme-btn {
+        padding: 7px 10px;
+        font-size: 0.7rem;
+        gap: 4px;
+    }
+    
+    .theme-icon-circle {
+        width: 16px;
+        height: 16px;
+        font-size: 9px;
+    }
+    
+    .theme-label {
+        font-size: 0.65rem;
+    }
+}
 
 /* Flip/torch button baseline styling (hidden by default; JS toggles display) */
 #flipCameraBtn, #torchBtn {
@@ -1074,5 +1159,48 @@ body[data-theme="dark"] .explanation-display {
     font-weight: 500 !important;
     color: #004085 !important;
 }
+
+/* --- RESPONSIVE BUTTON STYLING --- */
+
+/* Make button grids responsive */
+@media (max-width: 768px) {
+    [style*="grid-template-columns: 1fr 1fr 1fr"] {
+        grid-template-columns: 1fr 1fr !important;
+    }
+    
+    [style*="grid-template-columns: 1fr 1fr 1fr"] > button:last-child {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 480px) {
+    [style*="grid-template-columns: 1fr 1fr 1fr"],
+    [style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .btn-lg {
+        padding: 10px 8px !important;
+        font-size: 0.85rem !important;
+    }
+    
+    .btn {
+        padding: 8px 12px !important;
+        font-size: 0.85rem !important;
+    }
+}
+
+/* Ensure flex buttons wrap properly on mobile */
+[style*="display: flex"][style*="gap: 10px"] {
+    flex-wrap: wrap;
+}
+
+@media (max-width: 480px) {
+    [style*="display: flex"][style*="gap: 10px"] > .btn {
+        flex: 1 1 100% !important;
+    }
+}
+
+/* --- END RESPONSIVE BUTTON STYLING --- */
 
 /* --- END MOBILE OVERRIDES --- */
