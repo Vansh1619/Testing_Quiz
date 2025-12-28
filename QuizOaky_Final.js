@@ -376,7 +376,8 @@
       video.setAttribute('playsinline', '');
       reader.appendChild(video);
 
-      codeReader = new ZXing.BrowserCodeReader();
+      // Use QR-specific reader for faster, more accurate QR scanning
+      codeReader = new ZXing.BrowserQRCodeReader();
       // Prefer rear camera: try to find a device labeled back/rear or use the last device
       codeReader.listVideoInputDevices().then(devices => {
         videoInputDevices = devices || [];
@@ -398,14 +399,15 @@
         // show flip button if multiple devices
         try { if (videoInputDevices.length > 1) { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'inline-block'; } } catch(e){}
 
-        // Try to get a stream first (so we can control torch), then decode
-        navigator.mediaDevices.getUserMedia({ video: { deviceId: chosenDeviceId ? { exact: chosenDeviceId } : undefined, facingMode: { ideal: 'environment' } } }).then(stream => {
+        // Try to get a higher-resolution rear-facing stream first (helps speed/accuracy)
+        navigator.mediaDevices.getUserMedia({ video: { deviceId: chosenDeviceId ? { exact: chosenDeviceId } : undefined, facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } }).then(stream => {
             codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
           video.srcObject = stream; video.autoplay = true; video.muted = true; video.playsInline = true; video.setAttribute('playsinline','');
 
           // show active camera label
           try { const lbl = (videoInputDevices[currentVideoDeviceIndex] && videoInputDevices[currentVideoDeviceIndex].label) || ''; if (statusBox) statusBox.innerText = 'Using: ' + (lbl || 'camera'); } catch(e){}
 
+          // Start continuous decoding using BrowserQRCodeReader for best performance
           codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
             if (result) {
               try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
