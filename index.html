@@ -357,19 +357,12 @@
                     <div id="currentQuestion" class="question-container"></div>
 
                     <div class="navigation mt-3">
-                        <button class="btn btn-warning" id="pauseBtn" onclick="pauseQuiz()">Pause</button>
                         <button class="btn btn-primary" id="nextBtn" onclick="nextQuestion()">
                             Next
                         </button>
                     </div>
                 </div>
                 
-                <div id="pauseScreen" style="display: none; text-align: center; padding: 40px;">
-                    <h2>Quiz Paused</h2>
-                    <p style="font-size: 1.2rem; margin: 20px 0;">Time Remaining: <span id="pausedTimeDisplay">00:00</span></p>
-                    <button class="btn btn-primary btn-lg" onclick="resumeQuiz()" style="margin: 10px;">Resume Quiz</button>
-                    <button class="btn btn-danger btn-lg" onclick="endQuizEarly()" style="margin: 10px;">End Quiz</button>
-                </div>
 
                 <div id="results" class="results">
                     <div class="score-circle" id="scoreCircle">0/0</div>
