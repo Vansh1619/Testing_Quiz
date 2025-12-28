@@ -674,38 +674,39 @@
     } catch(e) { console.error('toggleTorch error', e); showAlert('Torch failed', 'warning'); }
   }
 
-  function flipCamera() {
-    if (!videoInputDevices || videoInputDevices.length <= 1) return showAlert('No alternate camera found', 'info');
-    // stop current
-    stopQrScanner();
-    // choose next
-    currentVideoDeviceIndex = (currentVideoDeviceIndex + 1) % videoInputDevices.length;
-    const nextDevice = videoInputDevices[currentVideoDeviceIndex];
-    // small delay before restarting
-    setTimeout(() => {
-      const reader = $('qrReader');
-      const statusBox = $('qrScannerStatus');
-      const resultBox = $('qrScanResult');
-      // If ZXing available, try it with chosen device
-      if (typeof ZXing !== 'undefined' && ZXing.BrowserCodeReader) {
-        try {
-          reader.style.display = 'block';
-          reader.innerHTML = '';
-          const video = document.createElement('video'); video.style.width='100%'; video.style.height='100%'; video.setAttribute('playsinline',''); reader.appendChild(video);
-          codeReader = new ZXing.BrowserCodeReader();
-          codeReader.decodeFromVideoDevice(nextDevice.deviceId || nextDevice.deviceId, video, (result, err) => {
-            if (result) {
-              const text = result.text.trim(); if (resultBox) resultBox.value = text; const joinCodeEl = $('joinCode'); if (joinCodeEl) joinCodeEl.value = text; showAlert('QR code scanned successfully!', 'success'); stopQrScanner();
+function flipCamera() {
+    if (!videoInputDevices || videoInputDevices.length <= 1) {
+        return showAlert('Only one camera available', 'info');
+    }
+    
+    try {
+        // Stop current scanner
+        stopQrScanner();
+        
+        // Switch to next camera
+        currentVideoDeviceIndex = (currentVideoDeviceIndex + 1) % videoInputDevices.length;
+        const nextDevice = videoInputDevices[currentVideoDeviceIndex];
+        
+        // Restart with new camera after brief delay
+        setTimeout(() => {
+            const reader = $('qrReader');
+            const statusBox = $('qrScannerStatus');
+            const resultBox = $('qrScanResult');
+            
+            // Use Html5Qrcode for flip (better mobile support)
+            if (typeof Html5Qrcode !== 'undefined') {
+                tryHtml5QrcodeScan(reader, statusBox, resultBox);
+                showAlert('Camera switched!', 'success');
+            } else {
+                showAlert('Restart camera to switch', 'info');
+                startQrScanner();
             }
-          }).then(() => { qrScannerActive = true; if (statusBox) statusBox.innerText = (nextDevice.label||'Camera') + ' active'; showAlert('Camera switched', 'info'); }).catch(err => { console.warn('flip ZXing error', err); tryHtml5QrcodeScan(reader, statusBox, resultBox); });
-        } catch(e) { console.warn('flip exception', e); tryHtml5QrcodeScan(reader, statusBox, resultBox); }
-      } else if (typeof Html5Qrcode !== 'undefined') {
-        tryHtml5QrcodeScan(reader, statusBox, resultBox);
-      } else {
-        showAlert('No scanner available to flip to', 'warning');
-      }
-    }, 300);
-  }
+        }, 400);
+    } catch(e) {
+        console.error('Flip camera error:', e);
+        showAlert('Camera switch failed. Try restarting.', 'warning');
+    }
+}
 
   // Teacher Passphrase
   async function computeHashHex(str) {
