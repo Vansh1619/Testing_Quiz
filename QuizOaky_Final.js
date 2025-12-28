@@ -311,10 +311,10 @@
   let html5QrScanner = null;
   let qrScannerActive = false;
   let codeReader = null;
-  let scanningStream = null;
   let videoInputDevices = [];
   let currentVideoDeviceIndex = 0;
   let qrDetectionTimer = null;
+  let torchOn = false;
   
   function toggleQRCode() {
     const container = $('qrContainer');
@@ -398,7 +398,64 @@
         // show flip button if multiple devices
         try { if (videoInputDevices.length > 1) { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'inline-block'; } } catch(e){}
 
-        codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
+        // Try to get a stream first (so we can control torch), then decode
+        navigator.mediaDevices.getUserMedia({ video: { deviceId: chosenDeviceId ? { exact: chosenDeviceId } : undefined, facingMode: { ideal: 'environment' } } }).then(stream => {
+            codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
+          video.srcObject = stream; video.autoplay = true; video.muted = true; video.playsInline = true; video.setAttribute('playsinline','');
+
+          // show active camera label
+          try { const lbl = (videoInputDevices[currentVideoDeviceIndex] && videoInputDevices[currentVideoDeviceIndex].label) || ''; if (statusBox) statusBox.innerText = 'Using: ' + (lbl || 'camera'); } catch(e){}
+
+          codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
+            if (result) {
+              try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
+              console.log('QR code detected:', result.text);
+              const text = result.text.trim();
+              if (resultBox) resultBox.value = text;
+              const joinCodeEl = $('joinCode');
+              if (joinCodeEl) joinCodeEl.value = text;
+              if (statusBox) statusBox.innerText = 'QR code detected.';
+              showAlert('QR code scanned successfully!', 'success');
+              stopQrScanner();
+              return;
+            }
+            if (err && err.name !== 'NotFoundException') {
+              console.warn('ZXing error:', err);
+            }
+          }).then(() => {
+            qrScannerActive = true;
+            if (statusBox) statusBox.innerText = 'Camera started. Point at a QR code.';
+            showAlert('Camera started! Point at QR code to scan.', 'info');
+            // detection timer
+            try {
+              if (qrDetectionTimer) clearTimeout(qrDetectionTimer);
+              qrDetectionTimer = setTimeout(() => {
+                console.warn('ZXing did not detect QR within timeout, switching to Html5Qrcode fallback');
+                try { stopQrScanner(); } catch(e){}
+                tryHtml5QrcodeScan(reader, statusBox, resultBox);
+              }, 10000);
+            } catch(e) { console.warn('Could not set detection timer', e); }
+          }).catch(err => {
+            console.error('ZXing scan error after getUserMedia:', err);
+            reader.style.display = 'none'; if (statusBox) statusBox.style.display = 'none';
+            if (err && err.name === 'NotAllowedError') {
+              showAlert('Camera permission denied. Please enable camera access in your browser settings.', 'warning');
+            } else {
+              showAlert('Camera error: ' + (err && err.message ? err.message : String(err)), 'warning');
+            }
+          });
+        }).catch(err => {
+          console.warn('getUserMedia failed, trying decodeFromVideoDevice directly', err);
+          // fallback to original behavior
+          codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err2) => {
+            if (result) {
+              try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
+              console.log('QR code detected:', result.text);
+              const text = result.text.trim(); if (resultBox) resultBox.value = text; const joinCodeEl = $('joinCode'); if (joinCodeEl) joinCodeEl.value = text; showAlert('QR code scanned successfully!', 'success'); stopQrScanner(); return;
+            }
+            if (err2 && err2.name !== 'NotFoundException') console.warn('ZXing error fallback:', err2);
+          }).then(() => { qrScannerActive = true; if (statusBox) statusBox.innerText = 'Camera started. Point at a QR code.'; showAlert('Camera started! Point at QR code to scan.', 'info'); }).catch(err3 => { console.error('ZXing start fallback error', err3); tryHtml5QrcodeScan(reader, statusBox, resultBox); });
+        });
           if (result) {
             // clear detection timer
             try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
@@ -567,6 +624,32 @@
     if (statusBox) statusBox.style.display = 'none';
     try { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'none'; } catch(e){}
     try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
+    try { const tbtn = $('torchBtn'); if (tbtn) tbtn.style.display = 'none'; } catch(e){}
+    try {
+      if (scanningStream && scanningStream.getTracks) {
+        scanningStream.getTracks().forEach(t => { try { t.stop(); } catch(e){} });
+      }
+      scanningStream = null;
+      torchOn = false;
+    } catch(e){}
+  }
+
+  function toggleTorch() {
+    if (!scanningStream) return showAlert('Torch not available: camera inactive', 'warning');
+    const track = scanningStream.getVideoTracks()[0];
+    if (!track) return showAlert('Torch not available: no video track', 'warning');
+    const cap = track.getCapabilities ? track.getCapabilities() : {};
+    if (!cap.torch) return showAlert('Torch not supported on this device/browser', 'warning');
+    try {
+      torchOn = !torchOn;
+      track.applyConstraints({ advanced: [{ torch: torchOn }] }).then(() => {
+        const tbtn = $('torchBtn'); if (tbtn) tbtn.textContent = torchOn ? 'Turn Flash Off' : 'Turn Flash On';
+        showAlert('Flash ' + (torchOn ? 'enabled' : 'disabled'), 'info');
+      }).catch(err => {
+        console.warn('Torch applyConstraints failed', err);
+        showAlert('Could not toggle flash: ' + (err && err.message ? err.message : String(err)), 'warning');
+      });
+    } catch(e) { console.error('toggleTorch error', e); showAlert('Torch failed', 'warning'); }
   }
 
   function flipCamera() {
