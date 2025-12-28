@@ -26,6 +26,19 @@
   const $ = id => document.getElementById(id);
   const safe = v => typeof v === 'string' ? v : (v == null ? '' : String(v));
 
+  // Normalize image URL: ensure protocol present (default to https://)
+  function normalizeImageUrl(url) {
+    if (!url) return '';
+    url = String(url).trim();
+    if (!url) return '';
+    if (!/^https?:\/\//i.test(url)) {
+      // if starts with // keep it, else assume https
+      if (/^\/\//.test(url)) return 'https:' + url;
+      return 'https://' + url;
+    }
+    return url;
+  }
+
   // Dark Mode
   function toggleTheme() {
     const currentTheme = document.body.getAttribute('data-theme');
@@ -148,7 +161,8 @@
       questionDiv.className = 'question-item';
       const cat = q.category ? ` [${escapeHtml(q.category)}]` : '';
       const hint = q.hint ? ` - Hint: ${escapeHtml(q.hint)}` : '';
-      const imageHtml = q.image ? `<div style="margin: 10px 0; text-align: center;"><img src="${escapeHtml(q.image)}" style="max-width: 100%; max-height: 200px; border-radius: 5px;"></div>` : '';
+      const qi = normalizeImageUrl(q.image || '');
+      const imageHtml = qi ? `<div style="margin: 10px 0; text-align: center;"><img src="${escapeHtml(qi)}" alt="Question image" onerror="this.style.display='none'" style="max-width: 100%; max-height: 200px; border-radius: 5px;"></div>` : '';
       questionDiv.innerHTML = `
         <div class="question-text">${index + 1}. ${escapeHtml(q.question)}${cat}${hint}</div>
         ${imageHtml}
@@ -321,13 +335,16 @@
         const correct = (correctIdx >= 0 ? parseInt((parts[correctIdx] || '').trim()) : (parseInt((parts[5]||'').trim()) || 0));
         const cat = categoryIdx >= 0 ? (parts[categoryIdx] || '').trim() : '';
         const hint = hintIdx >= 0 ? (parts[hintIdx] || '').trim() : '';
-        const image = imageIdx >= 0 ? (parts[imageIdx] || '').trim() : '';
+        let image = imageIdx >= 0 ? (parts[imageIdx] || '').trim() : '';
+        image = normalizeImageUrl(image || '');
         const optImages = [];
-        if (optionImageIndices.length) {
-          for (let i = 0; i < optionImageIndices.length && i < 4; i++) {
-            optImages.push((parts[optionImageIndices[i]] || '').trim());
+          if (optionImageIndices.length) {
+            for (let i = 0; i < optionImageIndices.length && i < 4; i++) {
+              optImages.push((parts[optionImageIndices[i]] || '').trim());
+            }
+            // Normalize option image URLs
+            for (let k = 0; k < optImages.length; k++) optImages[k] = normalizeImageUrl(optImages[k] || '');
           }
-        }
 
         if (q && opts.every(o => o)) {
           questions.push({
@@ -341,6 +358,7 @@
             image: image || '',
             optionImages: optImages
           });
+          console.log('Imported question:', q, 'image=', image || '');
         }
       }
 
@@ -990,18 +1008,40 @@ function flipCamera() {
         }
 
         const minimal = buildMinimal(quizData);
-        let safe = null;
-        
-        // Try to encode minimal format for QR (smaller)
-        try {
-          if (typeof LZString !== 'undefined' && LZString.compressToEncodedURIComponent) {
-            safe = LZString.compressToEncodedURIComponent(JSON.stringify(minimal));
-          }
-        } catch (e) { safe = null; }
+        const compactJson = JSON.stringify(compact);
+        const fullJson = JSON.stringify(quizData);
 
-        if (!safe) {
-          const encoded = btoa(JSON.stringify(minimal));
-          safe = encodeURIComponent(encoded);
+        // Compression helper
+        function tryCompress(obj) {
+          try {
+            if (typeof LZString !== 'undefined' && LZString.compressToEncodedURIComponent) {
+              return LZString.compressToEncodedURIComponent(JSON.stringify(obj));
+            }
+          } catch (e) {}
+          try {
+            const encoded = btoa(JSON.stringify(obj));
+            return encodeURIComponent(encoded);
+          } catch (e) {
+            return null;
+          }
+        }
+
+        // Try full payload (includes images) -> compact -> minimal
+        // Threshold is conservative for Version 40 L (~4296 bytes raw). Use encoded length limit.
+        const SIZE_LIMIT = 3800;
+        let safe = null;
+        // try full
+        const tryFull = tryCompress(quizData);
+        if (tryFull && tryFull.length <= SIZE_LIMIT) {
+          safe = tryFull;
+        } else {
+          const tryCompact = tryCompress(compact);
+          if (tryCompact && tryCompact.length <= SIZE_LIMIT) {
+            safe = tryCompact;
+          } else {
+            const tryMinimal = tryCompress(minimal);
+            safe = tryMinimal || tryCompact || tryFull;
+          }
         }
 
         const currentUrl = window.location.href.split('#')[0];
@@ -1587,9 +1627,9 @@ function flipCamera() {
 
   // Quiz Start
   function startQuiz() {
-    $('quizStart').style.display = 'none';
-    $('pauseScreen').style.display = 'none';
-    $('quizInterface').style.display = 'block';
+    const qs = $('quizStart'); if (qs) qs.style.display = 'none';
+    const ps = $('pauseScreen'); if (ps) ps.style.display = 'none';
+    const qi = $('quizInterface'); if (qi) qi.style.display = 'block';
     currentQuestionIndex = 0;
     studentAnswers = {};
     shuffleQuestions = $('shuffleQuestionsCheck')?.checked || false;
@@ -1618,30 +1658,46 @@ function flipCamera() {
     clearInterval(questionTimerInterval);
     const qIdx = shuffleQuestions ? originalQuestionOrder[currentQuestionIndex] : currentQuestionIndex;
     const question = questions[qIdx];
+    console.log('Showing question index', currentQuestionIndex, 'id', question && question.id, 'image=', question && question.image);
+    console.log('Question object:', question);
     const currentQuestionDiv = $('currentQuestion');
-    const optionsHtml = question.type === 'tf' 
-      ? `<div class="quiz-options">
-          <div class="quiz-option" data-index="0">True</div>
-          <div class="quiz-option" data-index="1">False</div>
-        </div>`
-      : `<div class="quiz-options">
-          ${question.options.map((option, index) => `
-              <div class="quiz-option" data-index="${index}">
-                  ${String.fromCharCode(65 + index)}. ${escapeHtml(option)}
-                  ${question.optionImages?.[index] ? `<br><img src="${escapeHtml(question.optionImages[index])}" style="max-width: 100%; max-height: 150px; margin-top: 10px; border-radius: 5px;">` : ''}
-              </div>
-          `).join('')}
-        </div>`;
+    const optionsHtml = (function() {
+      if (question.type === 'tf') return `<div class="quiz-options"><div class="quiz-option" data-index="0">True</div><div class="quiz-option" data-index="1">False</div></div>`;
+      let out = '';
+      (question.options || []).forEach((option, index) => {
+        const optImg = normalizeImageUrl(question.optionImages?.[index] || '');
+        out += `<div class="quiz-option" data-index="${index}">`;
+        out += `${String.fromCharCode(65 + index)}. ${escapeHtml(option)}`;
+        if (optImg) out += `<br><img src="${escapeHtml(optImg)}" alt="Option image" onerror="this.style.display='none'" style="max-width: 100%; max-height: 150px; margin-top: 10px; border-radius: 5px;">`;
+        out += `</div>`;
+      });
+      return `<div class="quiz-options">${out}</div>`;
+    })();
     const hintHtml = showHints && question.hint ? `<div class="hint-display"><strong>💡 Hint:</strong> ${escapeHtml(question.hint)}</div>` : '';
-    const imageHtml = question.image ? `<div style="margin: 15px 0; text-align: center;"><img src="${escapeHtml(question.image)}" style="max-width: 100%; max-height: 300px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);"></div>` : '';
+    const imgSrc = normalizeImageUrl(question.image || '');
     currentQuestionDiv.innerHTML = `
       <div class="timer-container">Time Left: <span id="questionTimer">60</span>s</div>
       <div class="question-number">Question ${currentQuestionIndex + 1} of ${questions.length}</div>
       <div class="question">${escapeHtml(question.question)}</div>
-      ${imageHtml}
+      <div id="questionImageHolder" style="margin:15px 0; text-align:center;"></div>
       ${hintHtml}
       ${optionsHtml}
     `;
+
+    // Preload and insert question image (show placeholder on error)
+    if (imgSrc) {
+      const img = new Image();
+      img.onload = function() {
+        const holder = currentQuestionDiv.querySelector('#questionImageHolder');
+        if (holder) holder.innerHTML = `<div style="margin: 15px 0; text-align: center;"><img src="${escapeHtml(imgSrc)}" alt="Question image" style="max-width: 100%; max-height: 300px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);"></div>`;
+      };
+      img.onerror = function() {
+        const holder = currentQuestionDiv.querySelector('#questionImageHolder');
+        if (holder) holder.innerHTML = `<div style="color:#c00; font-size:0.95rem;">Image failed to load</div>`;
+        console.warn('Question image failed to load:', imgSrc);
+      };
+      img.src = imgSrc;
+    }
     const optionElements = currentQuestionDiv.querySelectorAll('.quiz-option');
     optionElements.forEach((optionEl) => {
       optionEl.addEventListener('click', function() {
@@ -1669,28 +1725,15 @@ function flipCamera() {
     if (nextBtn) nextBtn.textContent = currentQuestionIndex === questions.length - 1 ? 'Finish Quiz' : 'Next';
   }
 
-  // Pause/Resume
+  // Pause/Resume - Disabled
   function pauseQuiz() {
-    isPaused = true;
-    clearInterval(questionTimerInterval);
-    const timerEl = $('questionTimer');
-    if (timerEl) {
-      pausedTimeLeft = parseInt(timerEl.textContent);
-    }
-    $('quizInterface').style.display = 'none';
-    $('pauseScreen').style.display = 'block';
-    $('pausedTimeDisplay').textContent = formatTime(pausedTimeLeft || QUESTION_TIME);
+    // Pause feature removed — kept as no-op to avoid errors from legacy calls.
+    try { showAlert('Pause option has been disabled in this build.', 'info'); } catch (e) { }
   }
 
   function resumeQuiz() {
-    isPaused = false;
-    $('quizInterface').style.display = 'block';
-    $('pauseScreen').style.display = 'none';
-    if (pausedTimeLeft !== null) {
-      const timerEl = $('questionTimer');
-      if (timerEl) timerEl.textContent = pausedTimeLeft;
-    }
-    startQuestionTimer();
+    // Resume is disabled; kept as no-op for compatibility.
+    try { showAlert('Resume option is not available.', 'info'); } catch (e) { }
   }
 
   function endQuizEarly() {
@@ -1965,7 +2008,7 @@ function flipCamera() {
           const questionText = $('questionText').value.trim();
           const category = $('questionCategory').value.trim();
           const hint = $('questionHint').value.trim();
-          const image = $('questionImage').value.trim();
+          const image = normalizeImageUrl($('questionImage').value.trim());
           let correctOptionIndex, options;
           if (type === 'tf') {
             const chosen = document.querySelector('input[name="tfCorrectOption"]:checked');
@@ -1985,10 +2028,10 @@ function flipCamera() {
           }
           if (!questionText) { showAlert('Please fill question!', 'warning'); return; }
           const optImages = type === 'mc' ? [
-            $('optionImage0').value.trim(),
-            $('optionImage1').value.trim(),
-            $('optionImage2').value.trim(),
-            $('optionImage3').value.trim()
+            normalizeImageUrl($('optionImage0').value.trim()),
+            normalizeImageUrl($('optionImage1').value.trim()),
+            normalizeImageUrl($('optionImage2').value.trim()),
+            normalizeImageUrl($('optionImage3').value.trim())
           ] : [];
           const newQuestion = {
             id: Date.now(),
