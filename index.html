@@ -244,22 +244,53 @@
                         
                         <!-- Tab 2: Scan QR -->
                         <div class="tab-pane fade" id="scan-qr" role="tabpanel">
-                            <div class="form-group">
-                                <label><strong>Scan QR Code</strong></label>
-                                <div class="d-flex gap-2 mb-2">
-                                        <button type="button" class="btn btn-primary btn-sm" id="startCameraBtn" onclick="startQrScanner()">Start Camera</button>
-                                        <button type="button" class="btn btn-outline-danger btn-sm" id="stopCameraBtn" onclick="stopQrScanner()">Stop Camera</button>
-                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="flipCameraBtn" onclick="flipCamera()" style="display:none;">Flip Camera</button>
-                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="torchBtn" onclick="toggleTorch()" style="display:none;">Toggle Flash</button>
-                                </div>
-                                <div id="qrReader" style="display:none; width:100%; max-width:100%; height:360px; margin: 10px auto 0; border-radius:8px; overflow:hidden; background:#000; position:relative;"></div>
-                                <div id="qrScannerStatus" style="margin-top: 10px; padding: 10px; background: #e7f3ff; border: 1px solid #b3d9ff; border-radius: 4px; color: #004085; font-size: 0.9rem; display:none;">
-                                    <strong>Camera Active:</strong> Point your device at a QR code to scan it. The quiz code will be automatically filled below.
-                                </div>
-                                <textarea id="qrScanResult" class="form-control mt-2" placeholder="Scanned QR code will appear here..." rows="2" readonly></textarea>
-                                <small class="text-muted d-block mt-2">Camera access is required. Grant permissions when prompted.</small>
-                            </div>
-                        </div>
+    <div class="form-group">
+        <label style="font-weight: 600; font-size: 1.1rem;">Point Camera at QR Code</label>
+        <p style="font-size: 0.9rem; color: #666; margin-bottom: 15px; line-height: 1.5;">
+            Hold your phone steady and point the camera at the QR code. 
+            It will automatically detect and fill the code below.
+        </p>
+        
+        <!-- Main Camera Controls -->
+        <div class="d-grid gap-2 mb-3">
+            <button type="button" class="btn btn-primary btn-lg" id="startCameraBtn" onclick="startQrScanner()" style="font-weight: 600;">
+                START CAMERA
+            </button>
+            <button type="button" class="btn btn-outline-danger" id="stopCameraBtn" onclick="stopQrScanner()">
+                STOP CAMERA
+            </button>
+        </div>
+        
+        <!-- Secondary Controls -->
+        <div class="d-flex gap-2 mb-3">
+            <button type="button" class="btn btn-sm btn-outline-info flex-grow-1" id="flipCameraBtn" onclick="flipCamera()" style="display:none; font-weight: 600;">
+                FLIP CAMERA
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-warning flex-grow-1" id="torchBtn" onclick="toggleTorch()" style="display:none; font-weight: 600;">
+                FLASH
+            </button>
+        </div>
+        
+        <!-- QR Reader Display -->
+        <div id="qrReader" style="display:none; width:100%; max-width:100%; height:360px; margin: 0 auto 10px; border-radius:12px; overflow:hidden; background:#000; position:relative; border: 3px solid #00F2FE;"></div>
+        
+        <!-- Status Message -->
+        <div id="qrScannerStatus" style="margin: 10px 0; padding: 12px 15px; background: linear-gradient(135deg, #e7f3ff 0%, #f0f8ff 100%); border: 2px solid #00d9ff; border-radius: 8px; color: #003d82; font-size: 0.95rem; display:none; font-weight: 500; line-height: 1.4;">
+            CAMERA ACTIVE: Aim the QR code at the center of the screen
+        </div>
+        
+        <!-- Result Display -->
+        <textarea id="qrScanResult" class="form-control" placeholder="Scanned QR code will appear here..." rows="2" readonly style="background: #f5f5f5; margin-top: 10px; font-family: monospace;"></textarea>
+        
+        <!-- Help Text -->
+        <small class="text-muted d-block mt-3" style="line-height: 1.6;">
+            Tips for best results:<br>
+            - Make sure there's good lighting<br>
+            - Keep the phone steady<br>
+            - Grant camera permission when prompted
+        </small>
+    </div>
+</div>
                     </div>
                     
                     <button class="btn btn-primary btn-lg w-100 mt-3" onclick="joinQuiz()" aria-label="Join quiz">Join Quiz</button>
