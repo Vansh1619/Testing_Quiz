@@ -529,16 +529,31 @@
           return;
         }
         
-        // store devices and prefer rear camera
+        // store devices; use currentVideoDeviceIndex if set, else prefer rear camera
         videoInputDevices = cameras || [];
-        currentVideoDeviceIndex = 0;
         let cameraId = null;
-        for (let i = 0; i < videoInputDevices.length; i++) {
-          const label = (videoInputDevices[i].label || '').toLowerCase();
-          if (/back|rear|environment|camera 1/.test(label)) { currentVideoDeviceIndex = i; cameraId = videoInputDevices[i].id; break; }
+        
+        // If currentVideoDeviceIndex is valid, use it (from flipCamera)
+        if (currentVideoDeviceIndex >= 0 && currentVideoDeviceIndex < videoInputDevices.length) {
+          cameraId = videoInputDevices[currentVideoDeviceIndex].id;
+        } else {
+          // First time: prefer rear camera
+          currentVideoDeviceIndex = 0;
+          for (let i = 0; i < videoInputDevices.length; i++) {
+            const label = (videoInputDevices[i].label || '').toLowerCase();
+            if (/back|rear|environment|camera 1/.test(label)) { currentVideoDeviceIndex = i; cameraId = videoInputDevices[i].id; break; }
+          }
+          if (!cameraId && videoInputDevices.length) { currentVideoDeviceIndex = videoInputDevices.length - 1; cameraId = videoInputDevices[currentVideoDeviceIndex].id; }
         }
-        if (!cameraId && videoInputDevices.length) { currentVideoDeviceIndex = videoInputDevices.length - 1; cameraId = videoInputDevices[currentVideoDeviceIndex].id; }
-        try { if (videoInputDevices.length > 1) { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'inline-block'; } } catch(e){}
+        
+        console.log('Html5Qrcode: found', videoInputDevices.length, 'cameras; using index', currentVideoDeviceIndex, 'cameraId:', cameraId);
+        if (videoInputDevices.length > 1) { 
+          const fbtn = $('flipCameraBtn'); 
+          if (fbtn) { 
+            fbtn.style.display = 'inline-block'; 
+            console.log('Flip button shown');
+          } 
+        }
 
         // Mobile-optimized config: lower fps for better performance on slower phones
         const config = {
@@ -679,6 +694,8 @@ function flipCamera() {
         return showAlert('Only one camera available', 'info');
     }
     
+    console.log('Flip camera: switching from index', currentVideoDeviceIndex);
+    
     try {
         // Stop current scanner
         stopQrScanner();
@@ -686,6 +703,8 @@ function flipCamera() {
         // Switch to next camera
         currentVideoDeviceIndex = (currentVideoDeviceIndex + 1) % videoInputDevices.length;
         const nextDevice = videoInputDevices[currentVideoDeviceIndex];
+        
+        console.log('Flip camera: new index', currentVideoDeviceIndex, 'device:', nextDevice);
         
         // Restart with new camera after brief delay
         setTimeout(() => {
@@ -695,8 +714,9 @@ function flipCamera() {
             
             // Use Html5Qrcode for flip (better mobile support)
             if (typeof Html5Qrcode !== 'undefined') {
+                console.log('Starting camera with device index:', currentVideoDeviceIndex);
                 tryHtml5QrcodeScan(reader, statusBox, resultBox);
-                showAlert('Camera switched!', 'success');
+                showAlert('Camera switched to ' + (nextDevice.label || 'camera ' + (currentVideoDeviceIndex + 1)), 'success');
             } else {
                 showAlert('Restart camera to switch', 'info');
                 startQrScanner();
