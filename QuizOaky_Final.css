@@ -901,8 +901,9 @@ body[data-theme="dark"] .collect-section {
     .score-circle {
         font-size: 2.5rem;
     }
-    /* Theme button: make inline on mobile so it doesn't overlap header */
-    .theme-btn { position: relative; right: auto; top: auto; width: auto; margin-left: auto; display: inline-block; }
+    /* Theme button: keep top-right on mobile */
+    .header { position: relative; }
+    .theme-btn { position: absolute; right: 12px; top: 12px; }
 }
 
 .hint-display {
