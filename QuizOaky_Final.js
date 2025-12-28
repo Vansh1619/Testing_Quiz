@@ -312,6 +312,9 @@
   let qrScannerActive = false;
   let codeReader = null;
   let scanningStream = null;
+  let videoInputDevices = [];
+  let currentVideoDeviceIndex = 0;
+  let qrDetectionTimer = null;
   
   function toggleQRCode() {
     const container = $('qrContainer');
@@ -375,26 +378,30 @@
 
       codeReader = new ZXing.BrowserCodeReader();
       // Prefer rear camera: try to find a device labeled back/rear or use the last device
-      codeReader.listVideoInputDevices().then(videoInputDevices => {
+      codeReader.listVideoInputDevices().then(devices => {
+        videoInputDevices = devices || [];
+        // choose rear if available
         let chosenDeviceId = undefined;
-        if (videoInputDevices && videoInputDevices.length) {
+        currentVideoDeviceIndex = 0;
+        if (videoInputDevices.length) {
           for (let i = 0; i < videoInputDevices.length; i++) {
             const d = videoInputDevices[i];
             const label = (d && d.label) ? d.label.toLowerCase() : '';
-            if (/back|rear|environment|camera 1/.test(label)) {
-              chosenDeviceId = d.deviceId || d.id || d.deviceId;
-              break;
-            }
+            if (/back|rear|environment|camera 1/.test(label)) { currentVideoDeviceIndex = i; chosenDeviceId = d.deviceId || d.deviceId; break; }
           }
           if (!chosenDeviceId) {
-            // Use the last device which is commonly the rear camera on mobile
-            const last = videoInputDevices[videoInputDevices.length - 1];
-            chosenDeviceId = last.deviceId || last.id;
+            currentVideoDeviceIndex = videoInputDevices.length - 1;
+            chosenDeviceId = videoInputDevices[currentVideoDeviceIndex].deviceId;
           }
         }
 
+        // show flip button if multiple devices
+        try { if (videoInputDevices.length > 1) { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'inline-block'; } } catch(e){}
+
         codeReader.decodeFromVideoDevice(chosenDeviceId, video, (result, err) => {
           if (result) {
+            // clear detection timer
+            try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
             console.log('QR code detected:', result.text);
             const text = result.text.trim();
             if (resultBox) resultBox.value = text;
@@ -412,6 +419,17 @@
           qrScannerActive = true;
           if (statusBox) statusBox.innerText = 'Camera started. Point at a QR code.';
           showAlert('Camera started! Point at QR code to scan.', 'info');
+          // If no QR detected within 10s, fallback to Html5Qrcode which may be more tolerant
+          try {
+            if (qrDetectionTimer) clearTimeout(qrDetectionTimer);
+            qrDetectionTimer = setTimeout(() => {
+              console.warn('ZXing did not detect QR within timeout, switching to Html5Qrcode fallback');
+              try {
+                stopQrScanner();
+              } catch(e){}
+              tryHtml5QrcodeScan(reader, statusBox, resultBox);
+            }, 10000);
+          } catch(e) { console.warn('Could not set detection timer', e); }
         }).catch(err => {
           console.error('ZXing scan error:', err);
           reader.style.display = 'none';
@@ -461,13 +479,16 @@
           return;
         }
         
-        // Prefer rear camera: try to find a label indicating back/rear/environment
+        // store devices and prefer rear camera
+        videoInputDevices = cameras || [];
+        currentVideoDeviceIndex = 0;
         let cameraId = null;
-        for (let i = 0; i < cameras.length; i++) {
-          const label = (cameras[i].label || '').toLowerCase();
-          if (/back|rear|environment|camera 1/.test(label)) { cameraId = cameras[i].id; break; }
+        for (let i = 0; i < videoInputDevices.length; i++) {
+          const label = (videoInputDevices[i].label || '').toLowerCase();
+          if (/back|rear|environment|camera 1/.test(label)) { currentVideoDeviceIndex = i; cameraId = videoInputDevices[i].id; break; }
         }
-        if (!cameraId) cameraId = cameras[cameras.length - 1].id;
+        if (!cameraId && videoInputDevices.length) { currentVideoDeviceIndex = videoInputDevices.length - 1; cameraId = videoInputDevices[currentVideoDeviceIndex].id; }
+        try { if (videoInputDevices.length > 1) { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'inline-block'; } } catch(e){}
 
         const config = {
           fps: 10,
@@ -544,6 +565,41 @@
     qrScannerActive = false;
     if (reader) { reader.innerHTML = ''; reader.style.display = 'none'; }
     if (statusBox) statusBox.style.display = 'none';
+    try { const fbtn = $('flipCameraBtn'); if (fbtn) fbtn.style.display = 'none'; } catch(e){}
+    try { if (qrDetectionTimer) { clearTimeout(qrDetectionTimer); qrDetectionTimer = null; } } catch(e){}
+  }
+
+  function flipCamera() {
+    if (!videoInputDevices || videoInputDevices.length <= 1) return showAlert('No alternate camera found', 'info');
+    // stop current
+    stopQrScanner();
+    // choose next
+    currentVideoDeviceIndex = (currentVideoDeviceIndex + 1) % videoInputDevices.length;
+    const nextDevice = videoInputDevices[currentVideoDeviceIndex];
+    // small delay before restarting
+    setTimeout(() => {
+      const reader = $('qrReader');
+      const statusBox = $('qrScannerStatus');
+      const resultBox = $('qrScanResult');
+      // If ZXing available, try it with chosen device
+      if (typeof ZXing !== 'undefined' && ZXing.BrowserCodeReader) {
+        try {
+          reader.style.display = 'block';
+          reader.innerHTML = '';
+          const video = document.createElement('video'); video.style.width='100%'; video.style.height='100%'; video.setAttribute('playsinline',''); reader.appendChild(video);
+          codeReader = new ZXing.BrowserCodeReader();
+          codeReader.decodeFromVideoDevice(nextDevice.deviceId || nextDevice.deviceId, video, (result, err) => {
+            if (result) {
+              const text = result.text.trim(); if (resultBox) resultBox.value = text; const joinCodeEl = $('joinCode'); if (joinCodeEl) joinCodeEl.value = text; showAlert('QR code scanned successfully!', 'success'); stopQrScanner();
+            }
+          }).then(() => { qrScannerActive = true; if (statusBox) statusBox.innerText = (nextDevice.label||'Camera') + ' active'; showAlert('Camera switched', 'info'); }).catch(err => { console.warn('flip ZXing error', err); tryHtml5QrcodeScan(reader, statusBox, resultBox); });
+        } catch(e) { console.warn('flip exception', e); tryHtml5QrcodeScan(reader, statusBox, resultBox); }
+      } else if (typeof Html5Qrcode !== 'undefined') {
+        tryHtml5QrcodeScan(reader, statusBox, resultBox);
+      } else {
+        showAlert('No scanner available to flip to', 'warning');
+      }
+    }, 300);
   }
 
   // Teacher Passphrase
