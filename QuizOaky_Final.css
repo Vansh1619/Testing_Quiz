@@ -192,17 +192,50 @@ body[data-theme="dark"] {
 }
 
 .theme-btn {
-    transition: transform 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
     cursor: pointer;
     white-space: nowrap;
-    position: absolute;
-    right: 30px;
-    top: 30px;
+    position: relative;
     z-index: 100;
+    padding: 8px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    background: rgba(255,255,255,0.95);
+    border: 2px solid rgba(0, 242, 254, 0.5);
+    color: #333;
 }
 
 .theme-btn:hover {
-    transform: scale(1.1);
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 242, 254, 0.3);
+}
+
+/* Clear visual indicator for the small text inside the button */
+.theme-btn .theme-icon { font-weight: 700; }
+
+/* Flip/torch button baseline styling (hidden by default; JS toggles display) */
+#flipCameraBtn, #torchBtn {
+    display: none; /* JS will set inline style when available */
+    min-width: 120px;
+}
+
+/* Mobile-specific refinements */
+@media (max-width: 768px) {
+    .theme-btn {
+        padding: 6px 10px !important;
+        font-size: 0.75rem !important;
+        order: 2;
+    }
+
+    /* Make secondary controls full-width and equally sized on phones */
+    .d-flex.gap-2.mb-3 { gap: 10px; }
+    .d-flex.gap-2.mb-3 .btn { flex: 1 1 48%; }
+    #flipCameraBtn, #torchBtn { display: none; }
 }
 
 .content {
@@ -952,3 +985,94 @@ body[data-theme="dark"] .explanation-display {
     max-width: 100%;
     height: auto;
 }
+
+/* --- MOBILE-OPTIMIZED OVERRIDES (appended from MOBILE_CSS_FIX.css) --- */
+
+/* Fixed Dark Mode Button - Never overlaps content */
+.theme-btn {
+    position: fixed !important;
+    top: 12px !important;
+    right: 12px !important;
+    z-index: 2000 !important;
+    transition: all 0.3s ease !important;
+    cursor: pointer !important;
+    white-space: nowrap !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+    border: 2px solid rgba(0, 242, 254, 0.6) !important;
+    padding: 8px 12px !important;
+    border-radius: 20px !important;
+    font-weight: 600 !important;
+    font-size: 0.85rem !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+    color: #333 !important;
+}
+
+.theme-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 242, 254, 0.3) !important;
+}
+
+/* Ensure header doesn't hide button */
+.header {
+    padding: 30px;
+    padding-top: 60px;
+}
+
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-content {
+    padding-right: 0;
+}
+
+/* Mobile improvements */
+@media (max-width: 768px) {
+    .header {
+        padding: 16px;
+    }
+    
+    .header-top {
+        gap: 8px;
+    }
+    
+    .header h1 {
+        font-size: 1.6rem;
+        margin-bottom: 5px;
+    }
+    
+    .header p {
+        font-size: 0.8rem;
+        margin: 0;
+    }
+}
+
+/* Camera section improvements */
+#qrReader {
+    border-radius: 12px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+}
+
+.btn-lg {
+    padding: 12px !important;
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+}
+
+.d-grid .btn {
+    text-align: center;
+}
+
+#qrScannerStatus {
+    background: linear-gradient(135deg, #e7f3ff 0%, #fff8e1 100%) !important;
+    border: 2px solid #b3d9ff !important;
+    border-radius: 8px !important;
+    padding: 12px !important;
+    font-weight: 500 !important;
+    color: #004085 !important;
+}
+
+/* --- END MOBILE OVERRIDES --- */
